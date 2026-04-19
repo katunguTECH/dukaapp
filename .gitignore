@@ -1,0 +1,6 @@
+﻿node_modules/
+.env
+dukaapp.db
+dukaapp-backup.db
+*.log
+.DS_Store
