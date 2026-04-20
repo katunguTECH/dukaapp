@@ -2,14 +2,14 @@ const express = require('express');
 const { MessagingResponse } = require('twilio').twiml;
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
+const path = require('path');
 
 const app = express();
 
-// IMPORTANT: These must be BEFORE your webhook route
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
+app.use(express.static('.'));
 
-// Initialize database
 let db;
 
 async function initDatabase() {
@@ -36,15 +36,273 @@ async function initDatabase() {
       date DATE DEFAULT CURRENT_DATE,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+    
+    CREATE TABLE IF NOT EXISTS agents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT UNIQUE,
+      name TEXT,
+      agent_code TEXT UNIQUE,
+      commission_rate REAL DEFAULT 0.10,
+      total_earned REAL DEFAULT 0,
+      paid_out REAL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS agent_signups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id INTEGER,
+      shop_phone TEXT,
+      shop_name TEXT,
+      status TEXT DEFAULT 'pending',
+      commission_due REAL,
+      commission_paid BOOLEAN DEFAULT 0,
+      signup_bonus_paid BOOLEAN DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (agent_id) REFERENCES agents(id)
+    );
+    
+    CREATE TABLE IF NOT EXISTS agent_payouts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      agent_id INTEGER,
+      amount REAL,
+      status TEXT DEFAULT 'pending',
+      mpesa_ref TEXT,
+      paid_at DATETIME,
+      FOREIGN KEY (agent_id) REFERENCES agents(id)
+    );
   `);
   console.log('✅ Database ready');
 }
 
 initDatabase();
 
-console.log('✅ Database ready');
+// ==================== AGENT API ENDPOINTS ====================
 
-// WhatsApp webhook endpoint
+app.post('/api/agent/signup', async (req, res) => {
+  const { phone, name } = req.body;
+  
+  if (!phone || !name) {
+    return res.status(400).json({ error: 'Phone and name required' });
+  }
+  
+  let cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.startsWith('0')) {
+    cleanPhone = '254' + cleanPhone.substring(1);
+  }
+  if (!cleanPhone.startsWith('254')) {
+    cleanPhone = '254' + cleanPhone;
+  }
+  cleanPhone = '+' + cleanPhone;
+  
+  const agentCode = name.substring(0, 3).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+  
+  try {
+    const existing = await db.get('SELECT * FROM agents WHERE phone = ?', cleanPhone);
+    if (existing) {
+      return res.json({ success: true, agentCode: existing.agent_code, existing: true });
+    }
+    
+    await db.run(`
+      INSERT INTO agents (phone, name, agent_code) 
+      VALUES (?, ?, ?)
+    `, cleanPhone, name, agentCode);
+    
+    res.json({ success: true, agentCode: agentCode });
+  } catch (error) {
+    console.error('Agent signup error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/agent/dashboard', async (req, res) => {
+  const { code } = req.query;
+  
+  if (!code) {
+    return res.status(400).json({ error: 'Agent code required' });
+  }
+  
+  const agent = await db.get('SELECT * FROM agents WHERE agent_code = ?', code);
+  
+  if (!agent) {
+    return res.status(404).json({ error: 'Agent not found' });
+  }
+  
+  const signups = await db.all(`
+    SELECT * FROM agent_signups 
+    WHERE agent_id = ? 
+    ORDER BY created_at DESC
+  `, agent.id);
+  
+  const totalShops = signups.length;
+  const activeShops = signups.filter(s => s.status === 'active').length;
+  const totalCommission = signups.reduce((sum, s) => sum + (s.commission_due || 0), 0);
+  
+  res.json({
+    success: true,
+    agentName: agent.name,
+    agentCode: agent.agent_code,
+    totalShops: totalShops,
+    activeShops: activeShops,
+    totalCommission: totalCommission,
+    paidOut: agent.paid_out || 0,
+    signups: signups
+  });
+});
+
+app.post('/api/agent/register-shop', async (req, res) => {
+  const { agentCode, shopPhone, shopName } = req.body;
+  
+  if (!agentCode || !shopPhone || !shopName) {
+    return res.status(400).json({ success: false, message: 'Missing required fields' });
+  }
+  
+  const agent = await db.get('SELECT * FROM agents WHERE agent_code = ?', agentCode);
+  
+  if (!agent) {
+    return res.status(404).json({ success: false, message: 'Invalid agent code' });
+  }
+  
+  let cleanShopPhone = shopPhone.replace(/\D/g, '');
+  if (cleanShopPhone.startsWith('0')) {
+    cleanShopPhone = '254' + cleanShopPhone.substring(1);
+  }
+  if (!cleanShopPhone.startsWith('254')) {
+    cleanShopPhone = '254' + cleanShopPhone;
+  }
+  cleanShopPhone = '+' + cleanShopPhone;
+  
+  const existingUser = await db.get('SELECT * FROM users WHERE phone = ?', cleanShopPhone);
+  
+  if (existingUser) {
+    return res.status(400).json({ success: false, message: 'Shop already registered' });
+  }
+  
+  await db.run('INSERT INTO users (phone, name, step) VALUES (?, ?, ?)', cleanShopPhone, shopName, 'welcome');
+  
+  const commission = 200;
+  await db.run(`
+    INSERT INTO agent_signups (agent_id, shop_phone, shop_name, commission_due, status)
+    VALUES (?, ?, ?, ?, 'pending')
+  `, agent.id, cleanShopPhone, shopName, commission);
+  
+  await db.run('UPDATE agents SET total_earned = total_earned + ? WHERE id = ?', commission, agent.id);
+  
+  console.log(`📱 Send WhatsApp to ${cleanShopPhone}: Welcome to DukaApp! Your agent ${agent.name} has signed you up. Send "help" to get started.`);
+  
+  res.json({ 
+    success: true, 
+    message: `✅ Shop registered! You've earned KES ${commission} commission.`
+  });
+});
+
+// ==================== AGENT PAGES ====================
+
+app.get('/agent-signup', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Become a DukaApp Agent</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                display: flex;
+            }
+            .container { max-width: 500px; margin: auto; padding: 20px; }
+            .card {
+                background: white;
+                border-radius: 20px;
+                padding: 40px;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            }
+            h1 { color: #333; margin-bottom: 10px; }
+            .subtitle { color: #666; margin-bottom: 30px; }
+            input {
+                width: 100%;
+                padding: 15px;
+                margin: 10px 0;
+                border: 1px solid #ddd;
+                border-radius: 10px;
+                font-size: 16px;
+            }
+            button {
+                width: 100%;
+                background: #667eea;
+                color: white;
+                padding: 15px;
+                border: none;
+                border-radius: 10px;
+                font-size: 16px;
+                cursor: pointer;
+                margin-top: 20px;
+            }
+            button:hover { background: #5a67d8; }
+            .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 10px; margin-top: 20px; }
+            .commission-box {
+                background: #f0f0f0;
+                border-radius: 10px;
+                padding: 15px;
+                margin: 20px 0;
+                text-align: center;
+            }
+            .commission-box h3 { color: #28a745; font-size: 24px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="card">
+                <h1>🚀 Become a DukaApp Agent</h1>
+                <p class="subtitle">Earn KES 200 per shop + 10% monthly recurring commission</p>
+                <div class="commission-box">
+                    <h3>KES 200</h3>
+                    <p>per shop signup bonus</p>
+                    <p style="font-size: 14px;">+ 10% of their subscription (KES 30/month for 3 months)</p>
+                </div>
+                <form id="signupForm">
+                    <input type="text" id="name" placeholder="Your full name" required>
+                    <input type="tel" id="phone" placeholder="Your WhatsApp number (e.g., 0710440648)" required>
+                    <button type="submit">Start Earning →</button>
+                </form>
+                <div id="message"></div>
+            </div>
+        </div>
+        <script>
+            document.getElementById('signupForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('name').value;
+                const phone = document.getElementById('phone').value;
+                const response = await fetch('/api/agent/signup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, phone })
+                });
+                const result = await response.json();
+                if (result.success) {
+                    document.getElementById('message').innerHTML = \`
+                        <div class="success">
+                            <h3>✅ You're now an agent!</h3>
+                            <p>Your agent code: <strong>\${result.agentCode}</strong></p>
+                            <p><a href="/dashboard?code=\${result.agentCode}" style="color: #667eea;">Go to Dashboard →</a></p>
+                        </div>
+                    \`;
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `);
+});
+
+app.get('/dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+// ==================== WHATSAPP WEBHOOK ====================
+
 app.post('/whatsapp', async (req, res) => {
   console.log('📩 Webhook received:', req.body);
   
@@ -62,7 +320,6 @@ app.post('/whatsapp', async (req, res) => {
   
   console.log(`📱 From: ${userPhone}, Message: ${incomingMsg}`);
   
-  // Get or create user
   let user = await db.get('SELECT * FROM users WHERE phone = ?', userPhone);
   
   if (!user) {
@@ -82,7 +339,6 @@ app.post('/whatsapp', async (req, res) => {
   res.send(twiml.toString());
 });
 
-// Message handler logic
 async function handleMessage(phone, msg, step) {
   switch(step) {
     case 'welcome':
@@ -102,17 +358,10 @@ async function handleMessage(phone, msg, step) {
       if (msg.startsWith('sale')) {
         let amount = parseFloat(msg.split(' ')[1]);
         if (!isNaN(amount)) {
-          await db.run(`INSERT INTO transactions (phone, amount, type, description) 
-                      VALUES (?, ?, 'sale', ?)`, phone, amount, msg);
-          return {
-            text: `✅ Sale: KES ${amount} recorded\n\nSend "profit" to see today's total`,
-            nextStep: 'active'
-          };
+          await db.run(`INSERT INTO transactions (phone, amount, type, description) VALUES (?, ?, 'sale', ?)`, phone, amount, msg);
+          return { text: `✅ Sale: KES ${amount} recorded\n\nSend "profit" to see today's total`, nextStep: 'active' };
         } else {
-          return {
-            text: `❌ Please specify amount. Example: "sale 1500"`,
-            nextStep: 'active'
-          };
+          return { text: `❌ Please specify amount. Example: "sale 1500"`, nextStep: 'active' };
         }
       }
       
@@ -120,83 +369,60 @@ async function handleMessage(phone, msg, step) {
         let parts = msg.split(' ');
         let amount = parseFloat(parts[1]);
         let category = parts[2] || 'general';
-        
         if (!isNaN(amount)) {
-          await db.run(`INSERT INTO transactions (phone, amount, type, category, description) 
-                      VALUES (?, ?, 'expense', ?, ?)`, phone, amount, category, msg);
-          return {
-            text: `✅ Expense: KES ${amount} (${category}) recorded\n\nSend "profit" to see today's total`,
-            nextStep: 'active'
-          };
+          await db.run(`INSERT INTO transactions (phone, amount, type, category, description) VALUES (?, ?, 'expense', ?, ?)`, phone, amount, category, msg);
+          return { text: `✅ Expense: KES ${amount} (${category}) recorded\n\nSend "profit" to see today's total`, nextStep: 'active' };
         } else {
-          return {
-            text: `❌ Please specify amount. Example: "expense 800 stock"`,
-            nextStep: 'active'
-          };
+          return { text: `❌ Please specify amount. Example: "expense 800 stock"`, nextStep: 'active' };
         }
       }
       
       else if (msg === 'profit') {
         let today = new Date().toISOString().split('T')[0];
-        let sales = await db.get(`SELECT SUM(amount) as total FROM transactions 
-                                WHERE phone = ? AND type = 'sale' AND date = ?`, phone, today);
-        let expenses = await db.get(`SELECT SUM(amount) as total FROM transactions 
-                                   WHERE phone = ? AND type = 'expense' AND date = ?`, phone, today);
-        
+        let sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'sale' AND date = ?`, phone, today);
+        let expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`, phone, today);
         let salesTotal = sales?.total || 0;
         let expensesTotal = expenses?.total || 0;
         let profit = salesTotal - expensesTotal;
-        
-        return {
-          text: `📊 Today's Report (${today})\n\nSales: KES ${salesTotal}\nExpenses: KES ${expensesTotal}\nProfit: KES ${profit}\n\nSend "sale X" or "expense X" to add more`,
-          nextStep: 'active'
-        };
+        return { text: `📊 Today's Report (${today})\n\nSales: KES ${salesTotal}\nExpenses: KES ${expensesTotal}\nProfit: KES ${profit}\n\nSend "sale X" or "expense X" to add more`, nextStep: 'active' };
       }
       
       else if (msg === 'help') {
-        return {
-          text: `📖 Commands:\n• sale 1500 - Add sale\n• expense 800 stock - Add expense\n• profit - See today's profit\n• report - See weekly summary`,
-          nextStep: 'active'
-        };
+        return { text: `📖 Commands:\n• sale 1500 - Add sale\n• expense 800 stock - Add expense\n• profit - See today's profit\n• report - See weekly summary\n• agent - Become a DukaApp agent`, nextStep: 'active' };
       }
       
       else if (msg === 'report') {
-        let sales = await db.get(`SELECT SUM(amount) as total FROM transactions 
-                                WHERE phone = ? AND type = 'sale' AND date >= date('now', '-7 days')`, phone);
-        let expenses = await db.get(`SELECT SUM(amount) as total FROM transactions 
-                                   WHERE phone = ? AND type = 'expense' AND date >= date('now', '-7 days')`, phone);
-        
+        let sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'sale' AND date >= date('now', '-7 days')`, phone);
+        let expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date >= date('now', '-7 days')`, phone);
         let salesTotal = sales?.total || 0;
         let expensesTotal = expenses?.total || 0;
         let profit = salesTotal - expensesTotal;
-        
-        return {
-          text: `📈 Last 7 Days\n\nSales: KES ${salesTotal}\nExpenses: KES ${expensesTotal}\nProfit: KES ${profit}\n\nSend "profit" for today only`,
-          nextStep: 'active'
-        };
+        return { text: `📈 Last 7 Days\n\nSales: KES ${salesTotal}\nExpenses: KES ${expensesTotal}\nProfit: KES ${profit}\n\nSend "profit" for today only`, nextStep: 'active' };
+      }
+      
+      else if (msg === 'agent') {
+        return { text: `🤝 Want to earn money with DukaApp?\n\nJoin our agent program!\n\n• KES 200 per shop you sign up\n• 10% recurring commission for 3 months\n\nSign up here: https://dukaapp-production.up.railway.app/agent-signup\n\nAlready an agent? Go to: https://dukaapp-production.up.railway.app/dashboard?code=YOURCODE`, nextStep: 'active' };
       }
       
       else {
-        return {
-          text: `❌ I didn't understand "${msg}".\n\nTry:\n• sale 1500\n• expense 800 stock\n• profit\n• help`,
-          nextStep: 'active'
-        };
+        return { text: `❌ I didn't understand "${msg}".\n\nTry:\n• sale 1500\n• expense 800 stock\n• profit\n• report\n• help\n• agent`, nextStep: 'active' };
       }
       
     default:
-      return {
-        text: `Welcome back! Send "help" to see options.`,
-        nextStep: 'active'
-      };
+      return { text: `Welcome back! Send "help" to see options.`, nextStep: 'active' };
   }
 }
 
-// Add root route for testing
+// ==================== TEST ROUTES ====================
+
+app.get('/test', (req, res) => {
+  res.json({ status: 'ok', message: 'Server is running' });
+});
+
 app.get('/', (req, res) => {
   res.send('DukaApp is running! 🚀');
 });
 
-// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ DukaApp running on port ${PORT}`);
