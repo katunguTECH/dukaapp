@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DukaApp - Agent Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+        }
+        .header h1 { color: #333; margin-bottom: 10px; }
+        .agent-code {
+            background: #f0f0f0;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            font-family: monospace;
+            font-size: 1.2em;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .stat-card h3 { color: #666; font-size: 0.9em; margin-bottom: 10px; }
+        .stat-card .value { font-size: 2.5em; font-weight: bold; color: #667eea; }
+        .table-container {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            overflow-x: auto;
+            margin-bottom: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 15px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; color: #333; }
+        .status-pending { background: #ffc107; color: #333; padding: 5px 10px; border-radius: 20px; font-size: 0.85em; }
+        .status-active { background: #28a745; color: white; padding: 5px 10px; border-radius: 20px; font-size: 0.85em; }
+        .commission { color: #28a745; font-weight: bold; }
+        .signup-form {
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; margin-bottom: 8px; color: #333; font-weight: 500; }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+        }
+        .btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1em;
+            width: 100%;
+        }
+        .btn:hover { background: #5a67d8; }
+        .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 10px; margin-top: 20px; }
+        .error { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 10px; margin-top: 20px; }
+        @media (max-width: 768px) { .stats-grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 DukaApp Agent Dashboard</h1>
+            <p>Track your referrals, commissions, and earnings</p>
+            <div class="agent-code" id="agentCodeDisplay">Loading...</div>
+        </div>
+        
+        <div class="stats-grid">
+            <div class="stat-card"><h3>Total Shops Signed</h3><div class="value" id="totalShops">0</div></div>
+            <div class="stat-card"><h3>Active Shops</h3><div class="value" id="activeShops">0</div></div>
+            <div class="stat-card"><h3>Total Commission</h3><div class="value" id="totalCommission">KES 0</div></div>
+            <div class="stat-card"><h3>Paid Out</h3><div class="value" id="paidOut">KES 0</div></div>
+        </div>
+        
+        <div class="table-container">
+            <h2>📋 Your Sign-ups</h2>
+            <table>
+                <thead><tr><th>Shop Name</th><th>Phone</th><th>Status</th><th>Commission</th><th>Date</th></tr></thead>
+                <tbody id="signupsBody"><tr><td colspan="5">Loading...</td></tr></tbody>
+            </table>
+        </div>
+        
+        <div class="signup-form">
+            <h2>➕ Register New Shop</h2>
+            <form id="signupForm">
+                <div class="form-group">
+                    <label>Shop Owner's WhatsApp Number</label>
+                    <input type="tel" id="shopPhone" placeholder="e.g., 0710440648" required>
+                </div>
+                <div class="form-group">
+                    <label>Shop Name</label>
+                    <input type="text" id="shopName" placeholder="e.g., Mama Joyce Groceries" required>
+                </div>
+                <button type="submit" class="btn">Register Shop →</button>
+            </form>
+            <div id="message"></div>
+        </div>
+    </div>
+    
+    <script>
+        let agentCode = new URLSearchParams(window.location.search).get('code');
+        if (!agentCode) agentCode = localStorage.getItem('agentCode');
+        if (agentCode) {
+            localStorage.setItem('agentCode', agentCode);
+            document.getElementById('agentCodeDisplay').innerHTML = `<strong>Your Agent Code:</strong> ${agentCode}<br><small>Share: https://dukaapp.online/join?code=${agentCode}</small>`;
+            loadDashboard();
+        } else {
+            document.getElementById('agentCodeDisplay').innerHTML = '<strong>No agent code found.</strong><br><a href="/agent-signup">Click here to become an agent</a>';
+        }
+        
+        async function loadDashboard() {
+            const response = await fetch(`/api/agent/dashboard?code=${agentCode}`);
+            const data = await response.json();
+            if (data.success) {
+                document.getElementById('totalShops').innerText = data.totalShops;
+                document.getElementById('activeShops').innerText = data.activeShops;
+                document.getElementById('totalCommission').innerHTML = `KES ${data.totalCommission.toLocaleString()}`;
+                document.getElementById('paidOut').innerHTML = `KES ${data.paidOut.toLocaleString()}`;
+                const tbody = document.getElementById('signupsBody');
+                tbody.innerHTML = '';
+                data.signups.forEach(s => {
+                    tbody.innerHTML += `<tr><td>${s.shop_name}</td><td>${s.shop_phone}</td><td><span class="status-${s.status}">${s.status}</span></td><td class="commission">KES ${s.commission_due}</td><td>${new Date(s.created_at).toLocaleDateString()}</td></tr>`;
+                });
+            }
+        }
+        
+        document.getElementById('signupForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const response = await fetch('/api/agent/register-shop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agentCode, shopPhone: document.getElementById('shopPhone').value, shopName: document.getElementById('shopName').value })
+            });
+            const result = await response.json();
+            const msgDiv = document.getElementById('message');
+            if (result.success) {
+                msgDiv.innerHTML = `<div class="success">✅ ${result.message}</div>`;
+                document.getElementById('signupForm').reset();
+                loadDashboard();
+            } else {
+                msgDiv.innerHTML = `<div class="error">❌ ${result.message}</div>`;
+            }
+            setTimeout(() => msgDiv.innerHTML = '', 5000);
+        });
+    </script>
+</body>
+</html>
