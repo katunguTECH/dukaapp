@@ -49,6 +49,7 @@
             display: flex;
             gap: 32px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .nav-links a {
@@ -220,6 +221,53 @@
             margin: 0 auto 20px;
         }
 
+        /* Contact Section */
+        .contact-section {
+            padding: 60px 0;
+            background: #F9FAFB;
+            border-radius: 40px;
+            margin: 40px 0;
+        }
+
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            text-align: center;
+        }
+
+        .contact-card {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
+        }
+
+        .contact-card h3 {
+            color: #0F2B3D;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+
+        .contact-card p {
+            margin-bottom: 8px;
+        }
+
+        .contact-card a {
+            color: #25A55C;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .contact-card a:hover {
+            text-decoration: underline;
+        }
+
+        .email-icon, .phone-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+        }
+
         /* CTA Banner */
         .cta-banner {
             background: #0F2B3D;
@@ -248,11 +296,125 @@
             color: #6B7280;
         }
 
+        .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .footer-links a {
+            color: #4B5563;
+            text-decoration: none;
+        }
+
+        .footer-links a:hover {
+            color: #25A55C;
+        }
+
+        /* WhatsApp Chat Button */
+        .whatsapp-chat {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            z-index: 1000;
+            background-color: #25D366;
+            border-radius: 60px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            transition: transform 0.2s;
+            text-decoration: none;
+            color: white;
+            font-weight: 600;
+        }
+
+        .whatsapp-chat:hover {
+            transform: scale(1.05);
+            background-color: #20b859;
+        }
+
+        .whatsapp-chat img {
+            width: 28px;
+            height: 28px;
+        }
+
+        /* Chatbot Modal */
+        .chat-modal {
+            display: none;
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            width: 350px;
+            max-width: calc(100vw - 60px);
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            z-index: 1001;
+            flex-direction: column;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+
+        .chat-header {
+            background: #075E54;
+            color: white;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h4 {
+            margin: 0;
+        }
+
+        .chat-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .chat-body {
+            padding: 20px;
+            text-align: center;
+            min-height: 200px;
+        }
+
+        .chat-whatsapp-btn {
+            background: #25D366;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 40px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
+        .chat-whatsapp-btn:hover {
+            background: #20b859;
+        }
+
         @media (max-width: 768px) {
             .hero h1 { font-size: 36px; }
             .navbar { flex-direction: column; }
             .section-title { font-size: 28px; }
             .container { padding: 0 16px; }
+            .whatsapp-chat { padding: 10px 16px; }
+            .whatsapp-chat span { display: none; }
+            .chat-modal { width: 300px; right: 20px; bottom: 80px; }
         }
     </style>
 </head>
@@ -265,6 +427,7 @@
         <div class="nav-links">
             <a href="#features">Features</a>
             <a href="#how-it-works">How it works</a>
+            <a href="#contact">Contact</a>
             <a href="/agent-signup" class="btn-outline">Become an Agent</a>
         </div>
     </div>
@@ -349,6 +512,30 @@
         </div>
     </div>
 
+    <!-- Contact Section -->
+    <div id="contact" class="contact-section">
+        <div class="container">
+            <h2 class="section-title">Get in Touch</h2>
+            <div class="contact-grid">
+                <div class="contact-card">
+                    <div class="email-icon">📧</div>
+                    <h3>General Inquiries</h3>
+                    <p><a href="mailto:info@dukaapp.online">info@dukaapp.online</a></p>
+                </div>
+                <div class="contact-card">
+                    <div class="email-icon">💰</div>
+                    <h3>Sales</h3>
+                    <p><a href="mailto:sales@dukaapp.online">sales@dukaapp.online</a></p>
+                </div>
+                <div class="contact-card">
+                    <div class="email-icon">🛠️</div>
+                    <h3>Support</h3>
+                    <p><a href="mailto:support@dukaapp.online">support@dukaapp.online</a></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- CTA Banner -->
     <div class="cta-banner">
         <h2>Ready to know your real profit?</h2>
@@ -359,14 +546,73 @@
 
     <!-- Footer -->
     <div class="footer">
+        <div class="footer-links">
+            <a href="#features">Features</a>
+            <a href="#how-it-works">How it works</a>
+            <a href="#contact">Contact</a>
+            <a href="/agent-signup">Become an Agent</a>
+        </div>
         <p>&copy; 2026 DukaApp. Built for Kenyan small businesses.</p>
-        <p style="margin-top: 8px;">
-            <a href="/agent-signup" style="color: #25A55C; text-decoration: none;">Become an Agent</a> | 
-            <a href="#" style="color: #25A55C; text-decoration: none;">WhatsApp Support</a>
-        </p>
+        <p style="margin-top: 8px;">📧 info@dukaapp.online | 💰 sales@dukaapp.online | 🛠️ support@dukaapp.online</p>
     </div>
 </div>
 
-<!-- Simple redirect logic for the CTA (optional) -->
+<!-- WhatsApp Chat Button -->
+<a href="#" class="whatsapp-chat" id="whatsappChatBtn">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" fill="white">
+        <path d="M12.04 2.5c-5.3 0-9.6 4.3-9.6 9.6 0 1.7.4 3.3 1.2 4.8L2.5 22l5.2-1.4c1.4.7 3 1.1 4.6 1.1 5.3 0 9.6-4.3 9.6-9.6 0-5.3-4.3-9.6-9.6-9.6z"/>
+        <path fill="white" d="M12.04 4.5c4.2 0 7.6 3.4 7.6 7.6 0 4.2-3.4 7.6-7.6 7.6-1.4 0-2.7-.4-3.8-1L5.5 20l1.3-4.8c-.6-1.1-.9-2.3-.9-3.6 0-4.2 3.4-7.6 7.6-7.6z"/>
+    </svg>
+    <span>Chat with us</span>
+</a>
+
+<!-- Chatbot Modal -->
+<div class="chat-modal" id="chatModal">
+    <div class="chat-header">
+        <h4>DukaApp Support</h4>
+        <button class="chat-close" id="chatCloseBtn">×</button>
+    </div>
+    <div class="chat-body">
+        <div style="font-size: 48px; margin-bottom: 15px;">💬</div>
+        <p><strong>Need help?</strong></p>
+        <p>Click below to chat with us directly on WhatsApp. We'll respond in real-time!</p>
+        <a href="https://wa.me/254710440648?text=Hello%20DukaApp%2C%20I%20need%20help%20with%20your%20service" 
+           class="chat-whatsapp-btn" 
+           target="_blank">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="white">
+                <path d="M12.04 2.5c-5.3 0-9.6 4.3-9.6 9.6 0 1.7.4 3.3 1.2 4.8L2.5 22l5.2-1.4c1.4.7 3 1.1 4.6 1.1 5.3 0 9.6-4.3 9.6-9.6 0-5.3-4.3-9.6-9.6-9.6z"/>
+                <path fill="white" d="M12.04 4.5c4.2 0 7.6 3.4 7.6 7.6 0 4.2-3.4 7.6-7.6 7.6-1.4 0-2.7-.4-3.8-1L5.5 20l1.3-4.8c-.6-1.1-.9-2.3-.9-3.6 0-4.2 3.4-7.6 7.6-7.6z"/>
+            </svg>
+            Start WhatsApp Chat
+        </a>
+        <p style="font-size: 12px; color: #888; margin-top: 15px;">Response within minutes</p>
+    </div>
+</div>
+
+<script>
+    // Chatbot functionality
+    const chatBtn = document.getElementById('whatsappChatBtn');
+    const chatModal = document.getElementById('chatModal');
+    const chatCloseBtn = document.getElementById('chatCloseBtn');
+
+    // Open modal when chat button is clicked
+    chatBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        chatModal.style.display = 'flex';
+    });
+
+    // Close modal when close button is clicked
+    chatCloseBtn.addEventListener('click', () => {
+        chatModal.style.display = 'none';
+    });
+
+    // Close modal when clicking outside
+    window.addEventListener('click', (e) => {
+        if (e.target === chatModal) {
+            chatModal.style.display = 'none';
+        }
+    });
+</script>
+
 </body>
 </html>
