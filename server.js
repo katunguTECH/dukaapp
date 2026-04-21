@@ -195,7 +195,7 @@ app.post('/api/agent/register-shop', async (req, res) => {
   });
 });
 
-// ==================== AGENT PAGES ====================
+// ==================== AGENT SIGNUP PAGE (INLINE HTML) ====================
 
 app.get('/agent-signup', (req, res) => {
   res.send(`
@@ -212,15 +212,25 @@ app.get('/agent-signup', (req, res) => {
                 min-height: 100vh;
                 display: flex;
             }
-            .container { max-width: 500px; margin: auto; padding: 20px; }
+            .container {
+                max-width: 500px;
+                margin: auto;
+                padding: 20px;
+            }
             .card {
                 background: white;
                 border-radius: 20px;
                 padding: 40px;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             }
-            h1 { color: #333; margin-bottom: 10px; }
-            .subtitle { color: #666; margin-bottom: 30px; }
+            h1 {
+                color: #333;
+                margin-bottom: 10px;
+            }
+            .subtitle {
+                color: #666;
+                margin-bottom: 30px;
+            }
             input {
                 width: 100%;
                 padding: 15px;
@@ -241,7 +251,13 @@ app.get('/agent-signup', (req, res) => {
                 margin-top: 20px;
             }
             button:hover { background: #5a67d8; }
-            .success { background: #d4edda; color: #155724; padding: 15px; border-radius: 10px; margin-top: 20px; }
+            .success {
+                background: #d4edda;
+                color: #155724;
+                padding: 15px;
+                border-radius: 10px;
+                margin-top: 20px;
+            }
             .commission-box {
                 background: #f0f0f0;
                 border-radius: 10px;
@@ -257,11 +273,13 @@ app.get('/agent-signup', (req, res) => {
             <div class="card">
                 <h1>🚀 Become a DukaApp Agent</h1>
                 <p class="subtitle">Earn KES 200 per shop + 10% monthly recurring commission</p>
+                
                 <div class="commission-box">
                     <h3>KES 200</h3>
                     <p>per shop signup bonus</p>
                     <p style="font-size: 14px;">+ 10% of their subscription (KES 30/month for 3 months)</p>
                 </div>
+                
                 <form id="signupForm">
                     <input type="text" id="name" placeholder="Your full name" required>
                     <input type="tel" id="phone" placeholder="Your WhatsApp number (e.g., 0710440648)" required>
@@ -275,12 +293,14 @@ app.get('/agent-signup', (req, res) => {
                 e.preventDefault();
                 const name = document.getElementById('name').value;
                 const phone = document.getElementById('phone').value;
+                
                 const response = await fetch('/api/agent/signup', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, phone })
                 });
                 const result = await response.json();
+                
                 if (result.success) {
                     document.getElementById('message').innerHTML = \`
                         <div class="success">
@@ -297,8 +317,187 @@ app.get('/agent-signup', (req, res) => {
   `);
 });
 
+// ==================== DASHBOARD PAGE ====================
+
 app.get('/dashboard', (req, res) => {
   res.sendFile(path.join(__dirname, 'dashboard.html'));
+});
+
+// ==================== CUSTOM WHATSAPP REDIRECT PAGE ====================
+
+app.get('/start-trial', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Redirecting to WhatsApp - DukaApp</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                background: linear-gradient(135deg, #0F2B3D 0%, #1B4A6F 100%);
+                min-height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+            }
+            
+            .card {
+                background: white;
+                border-radius: 30px;
+                padding: 40px;
+                max-width: 500px;
+                text-align: center;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                animation: fadeIn 0.5s ease;
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            
+            .logo {
+                font-size: 48px;
+                font-weight: 800;
+                background: linear-gradient(135deg, #0F2B3D 0%, #1B4A6F 100%);
+                -webkit-background-clip: text;
+                background-clip: text;
+                color: transparent;
+                margin-bottom: 20px;
+            }
+            
+            .whatsapp-icon {
+                background: #25D366;
+                width: 80px;
+                height: 80px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 20px;
+            }
+            
+            .whatsapp-icon svg {
+                width: 50px;
+                height: 50px;
+            }
+            
+            h1 {
+                color: #1F2937;
+                margin-bottom: 15px;
+                font-size: 28px;
+            }
+            
+            p {
+                color: #6B7280;
+                margin-bottom: 25px;
+                line-height: 1.6;
+            }
+            
+            .loading {
+                display: inline-block;
+                width: 40px;
+                height: 40px;
+                border: 4px solid #e5e7eb;
+                border-top-color: #25D366;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin: 20px 0;
+            }
+            
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+            
+            .manual-link {
+                background: #F3F4F6;
+                padding: 15px;
+                border-radius: 15px;
+                margin-top: 20px;
+            }
+            
+            .manual-link p {
+                margin-bottom: 10px;
+                font-size: 14px;
+            }
+            
+            .manual-link a {
+                color: #25A55C;
+                text-decoration: none;
+                word-break: break-all;
+            }
+            
+            .btn {
+                background: #25D366;
+                color: white;
+                padding: 12px 24px;
+                border-radius: 40px;
+                text-decoration: none;
+                display: inline-block;
+                margin-top: 15px;
+                font-weight: 600;
+            }
+            
+            .countdown {
+                font-size: 14px;
+                color: #9CA3AF;
+                margin-top: 20px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <div class="logo">DukaApp</div>
+            <div class="whatsapp-icon">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white">
+                    <path d="M12.04 2.5c-5.3 0-9.6 4.3-9.6 9.6 0 1.7.4 3.3 1.2 4.8L2.5 22l5.2-1.4c1.4.7 3 1.1 4.6 1.1 5.3 0 9.6-4.3 9.6-9.6 0-5.3-4.3-9.6-9.6-9.6z"/>
+                    <path fill="white" d="M12.04 4.5c4.2 0 7.6 3.4 7.6 7.6 0 4.2-3.4 7.6-7.6 7.6-1.4 0-2.7-.4-3.8-1L5.5 20l1.3-4.8c-.6-1.1-.9-2.3-.9-3.6 0-4.2 3.4-7.6 7.6-7.6z"/>
+                </svg>
+            </div>
+            <h1>Opening WhatsApp...</h1>
+            <p>You'll be redirected to WhatsApp to start your free trial with DukaApp.</p>
+            <div class="loading"></div>
+            <p class="countdown">Redirecting in <span id="countdown">5</span> seconds...</p>
+            
+            <div class="manual-link">
+                <p>📱 Didn't redirect automatically?</p>
+                <p>Click the button below or copy this message:</p>
+                <p><code style="background:#e5e7eb; padding:5px 10px; border-radius:8px;">join grain-produce</code></p>
+                <a href="https://wa.me/14155238886?text=join%20grain-produce" class="btn" id="manualButton">
+                    Open WhatsApp →
+                </a>
+            </div>
+        </div>
+        
+        <script>
+            let seconds = 5;
+            const countdownEl = document.getElementById('countdown');
+            
+            const countdownInterval = setInterval(() => {
+                seconds--;
+                countdownEl.textContent = seconds;
+                if (seconds <= 0) {
+                    clearInterval(countdownInterval);
+                    window.location.href = 'https://wa.me/14155238886?text=join%20grain-produce';
+                }
+            }, 1000);
+            
+            document.getElementById('manualButton').addEventListener('click', () => {
+                clearInterval(countdownInterval);
+            });
+        </script>
+    </body>
+    </html>
+  `);
 });
 
 // ==================== WHATSAPP WEBHOOK ====================
@@ -401,7 +600,7 @@ async function handleMessage(phone, msg, step) {
       }
       
       else if (msg === 'agent') {
-        return { text: `🤝 Want to earn money with DukaApp?\n\nJoin our agent program!\n\n• KES 200 per shop you sign up\n• 10% recurring commission for 3 months\n\nSign up here: https://dukaapp-production.up.railway.app/agent-signup\n\nAlready an agent? Go to: https://dukaapp-production.up.railway.app/dashboard?code=YOURCODE`, nextStep: 'active' };
+        return { text: `🤝 Want to earn money with DukaApp?\n\nJoin our agent program!\n\n• KES 200 per shop you sign up\n• 10% recurring commission for 3 months\n\nSign up here: https://dukaapp.online/agent-signup\n\nAlready an agent? Go to: https://dukaapp.online/dashboard?code=YOURCODE`, nextStep: 'active' };
       }
       
       else {
@@ -420,7 +619,7 @@ app.get('/test', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('DukaApp is running! 🚀');
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 const PORT = process.env.PORT || 3000;
