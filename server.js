@@ -37,6 +37,47 @@ async function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     
+    CREATE TABLE IF NOT EXISTS cash_transactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT,
+      amount REAL,
+      type TEXT,
+      category TEXT,
+      description TEXT,
+      date DATE DEFAULT CURRENT_DATE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS credit_customers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_phone TEXT,
+      customer_name TEXT,
+      customer_phone TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    
+    CREATE TABLE IF NOT EXISTS credit_sales (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shop_phone TEXT,
+      customer_id INTEGER,
+      amount REAL,
+      description TEXT,
+      status TEXT DEFAULT 'pending',
+      due_date DATE,
+      date DATE DEFAULT CURRENT_DATE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (customer_id) REFERENCES credit_customers(id)
+    );
+    
+    CREATE TABLE IF NOT EXISTS credit_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      credit_sale_id INTEGER,
+      amount REAL,
+      date DATE DEFAULT CURRENT_DATE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (credit_sale_id) REFERENCES credit_sales(id)
+    );
+    
     CREATE TABLE IF NOT EXISTS agents (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT UNIQUE,
@@ -195,7 +236,7 @@ app.post('/api/agent/register-shop', async (req, res) => {
   });
 });
 
-// ==================== AGENT SIGNUP PAGE (INLINE HTML) ====================
+// ==================== AGENT SIGNUP PAGE ====================
 
 app.get('/agent-signup', (req, res) => {
   res.send(`
@@ -223,14 +264,8 @@ app.get('/agent-signup', (req, res) => {
                 padding: 40px;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             }
-            h1 {
-                color: #333;
-                margin-bottom: 10px;
-            }
-            .subtitle {
-                color: #666;
-                margin-bottom: 30px;
-            }
+            h1 { color: #333; margin-bottom: 10px; }
+            .subtitle { color: #666; margin-bottom: 30px; }
             input {
                 width: 100%;
                 padding: 15px;
@@ -273,13 +308,11 @@ app.get('/agent-signup', (req, res) => {
             <div class="card">
                 <h1>🚀 Become a DukaApp Agent</h1>
                 <p class="subtitle">Earn KES 200 per shop + 10% monthly recurring commission</p>
-                
                 <div class="commission-box">
                     <h3>KES 200</h3>
                     <p>per shop signup bonus</p>
                     <p style="font-size: 14px;">+ 10% of their subscription (KES 30/month for 3 months)</p>
                 </div>
-                
                 <form id="signupForm">
                     <input type="text" id="name" placeholder="Your full name" required>
                     <input type="tel" id="phone" placeholder="Your WhatsApp number (e.g., 0710440648)" required>
@@ -293,14 +326,12 @@ app.get('/agent-signup', (req, res) => {
                 e.preventDefault();
                 const name = document.getElementById('name').value;
                 const phone = document.getElementById('phone').value;
-                
                 const response = await fetch('/api/agent/signup', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name, phone })
                 });
                 const result = await response.json();
-                
                 if (result.success) {
                     document.getElementById('message').innerHTML = \`
                         <div class="success">
@@ -334,12 +365,7 @@ app.get('/start-trial', (req, res) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Redirecting to WhatsApp - DukaApp</title>
         <style>
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            
+            * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
                 background: linear-gradient(135deg, #0F2B3D 0%, #1B4A6F 100%);
@@ -349,7 +375,6 @@ app.get('/start-trial', (req, res) => {
                 justify-content: center;
                 padding: 20px;
             }
-            
             .card {
                 background: white;
                 border-radius: 30px;
@@ -359,12 +384,10 @@ app.get('/start-trial', (req, res) => {
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
                 animation: fadeIn 0.5s ease;
             }
-            
             @keyframes fadeIn {
                 from { opacity: 0; transform: translateY(20px); }
                 to { opacity: 1; transform: translateY(0); }
             }
-            
             .logo {
                 font-size: 48px;
                 font-weight: 800;
@@ -374,7 +397,6 @@ app.get('/start-trial', (req, res) => {
                 color: transparent;
                 margin-bottom: 20px;
             }
-            
             .whatsapp-icon {
                 background: #25D366;
                 width: 80px;
@@ -385,24 +407,8 @@ app.get('/start-trial', (req, res) => {
                 justify-content: center;
                 margin: 0 auto 20px;
             }
-            
-            .whatsapp-icon svg {
-                width: 50px;
-                height: 50px;
-            }
-            
-            h1 {
-                color: #1F2937;
-                margin-bottom: 15px;
-                font-size: 28px;
-            }
-            
-            p {
-                color: #6B7280;
-                margin-bottom: 25px;
-                line-height: 1.6;
-            }
-            
+            h1 { color: #1F2937; margin-bottom: 15px; font-size: 28px; }
+            p { color: #6B7280; margin-bottom: 25px; line-height: 1.6; }
             .loading {
                 display: inline-block;
                 width: 40px;
@@ -413,29 +419,13 @@ app.get('/start-trial', (req, res) => {
                 animation: spin 1s linear infinite;
                 margin: 20px 0;
             }
-            
-            @keyframes spin {
-                to { transform: rotate(360deg); }
-            }
-            
+            @keyframes spin { to { transform: rotate(360deg); } }
             .manual-link {
                 background: #F3F4F6;
                 padding: 15px;
                 border-radius: 15px;
                 margin-top: 20px;
             }
-            
-            .manual-link p {
-                margin-bottom: 10px;
-                font-size: 14px;
-            }
-            
-            .manual-link a {
-                color: #25A55C;
-                text-decoration: none;
-                word-break: break-all;
-            }
-            
             .btn {
                 background: #25D366;
                 color: white;
@@ -446,19 +436,14 @@ app.get('/start-trial', (req, res) => {
                 margin-top: 15px;
                 font-weight: 600;
             }
-            
-            .countdown {
-                font-size: 14px;
-                color: #9CA3AF;
-                margin-top: 20px;
-            }
+            .countdown { font-size: 14px; color: #9CA3AF; margin-top: 20px; }
         </style>
     </head>
     <body>
         <div class="card">
             <div class="logo">DukaApp</div>
             <div class="whatsapp-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="40" height="40" fill="white">
                     <path d="M12.04 2.5c-5.3 0-9.6 4.3-9.6 9.6 0 1.7.4 3.3 1.2 4.8L2.5 22l5.2-1.4c1.4.7 3 1.1 4.6 1.1 5.3 0 9.6-4.3 9.6-9.6 0-5.3-4.3-9.6-9.6-9.6z"/>
                     <path fill="white" d="M12.04 4.5c4.2 0 7.6 3.4 7.6 7.6 0 4.2-3.4 7.6-7.6 7.6-1.4 0-2.7-.4-3.8-1L5.5 20l1.3-4.8c-.6-1.1-.9-2.3-.9-3.6 0-4.2 3.4-7.6 7.6-7.6z"/>
                 </svg>
@@ -467,21 +452,15 @@ app.get('/start-trial', (req, res) => {
             <p>You'll be redirected to WhatsApp to start your free trial with DukaApp.</p>
             <div class="loading"></div>
             <p class="countdown">Redirecting in <span id="countdown">5</span> seconds...</p>
-            
             <div class="manual-link">
                 <p>📱 Didn't redirect automatically?</p>
-                <p>Click the button below or copy this message:</p>
-                <p><code style="background:#e5e7eb; padding:5px 10px; border-radius:8px;">join grain-produce</code></p>
-                <a href="https://wa.me/14155238886?text=join%20grain-produce" class="btn" id="manualButton">
-                    Open WhatsApp →
-                </a>
+                <p>Copy this message: <strong>join grain-produce</strong></p>
+                <a href="https://wa.me/14155238886?text=join%20grain-produce" class="btn" id="manualButton">Open WhatsApp →</a>
             </div>
         </div>
-        
         <script>
             let seconds = 5;
             const countdownEl = document.getElementById('countdown');
-            
             const countdownInterval = setInterval(() => {
                 seconds--;
                 countdownEl.textContent = seconds;
@@ -490,10 +469,7 @@ app.get('/start-trial', (req, res) => {
                     window.location.href = 'https://wa.me/14155238886?text=join%20grain-produce';
                 }
             }, 1000);
-            
-            document.getElementById('manualButton').addEventListener('click', () => {
-                clearInterval(countdownInterval);
-            });
+            document.getElementById('manualButton').addEventListener('click', () => clearInterval(countdownInterval));
         </script>
     </body>
     </html>
@@ -549,62 +525,252 @@ async function handleMessage(phone, msg, step) {
     case 'getting_name':
       await db.run('UPDATE users SET name = ? WHERE phone = ?', msg, phone);
       return {
-        text: `✅ Great! ${msg} is now set up.\n\nNow send:\n• "sale 1500" for sales\n• "expense 800 stock" for expenses\n\nTry it now:`,
+        text: `✅ Great! ${msg} is now set up.\n\nSend "help" to see all commands.\n\nTry: "sale 1500" for M-Pesa sale\nOr "cash 1000" for cash sale`,
         nextStep: 'active'
       };
       
     case 'active':
-      if (msg.startsWith('sale')) {
+      // ==================== M-PESA TRANSACTIONS ====================
+      if (msg.startsWith('sale ')) {
         let amount = parseFloat(msg.split(' ')[1]);
         if (!isNaN(amount)) {
           await db.run(`INSERT INTO transactions (phone, amount, type, description) VALUES (?, ?, 'sale', ?)`, phone, amount, msg);
-          return { text: `✅ Sale: KES ${amount} recorded\n\nSend "profit" to see today's total`, nextStep: 'active' };
+          return { text: `✅ M-Pesa Sale: KES ${amount} recorded\n\nSend "profit" to see today's total`, nextStep: 'active' };
         } else {
-          return { text: `❌ Please specify amount. Example: "sale 1500"`, nextStep: 'active' };
+          return { text: `❌ Example: "sale 1500"`, nextStep: 'active' };
         }
       }
       
-      else if (msg.startsWith('expense')) {
+      else if (msg.startsWith('expense ')) {
         let parts = msg.split(' ');
         let amount = parseFloat(parts[1]);
         let category = parts[2] || 'general';
         if (!isNaN(amount)) {
           await db.run(`INSERT INTO transactions (phone, amount, type, category, description) VALUES (?, ?, 'expense', ?, ?)`, phone, amount, category, msg);
-          return { text: `✅ Expense: KES ${amount} (${category}) recorded\n\nSend "profit" to see today's total`, nextStep: 'active' };
+          return { text: `✅ M-Pesa Expense: KES ${amount} (${category}) recorded\n\nSend "profit" to see today's total`, nextStep: 'active' };
         } else {
-          return { text: `❌ Please specify amount. Example: "expense 800 stock"`, nextStep: 'active' };
+          return { text: `❌ Example: "expense 800 stock"`, nextStep: 'active' };
         }
       }
       
-      else if (msg === 'profit') {
-        let today = new Date().toISOString().split('T')[0];
-        let sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'sale' AND date = ?`, phone, today);
-        let expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`, phone, today);
-        let salesTotal = sales?.total || 0;
-        let expensesTotal = expenses?.total || 0;
-        let profit = salesTotal - expensesTotal;
-        return { text: `📊 Today's Report (${today})\n\nSales: KES ${salesTotal}\nExpenses: KES ${expensesTotal}\nProfit: KES ${profit}\n\nSend "sale X" or "expense X" to add more`, nextStep: 'active' };
+      // ==================== CASH TRANSACTIONS ====================
+      else if (msg.startsWith('cash ')) {
+        let amount = parseFloat(msg.split(' ')[1]);
+        if (!isNaN(amount)) {
+          await db.run(`INSERT INTO cash_transactions (phone, amount, type, description) VALUES (?, ?, 'sale', ?)`, phone, amount, msg);
+          return { text: `✅ Cash Sale: KES ${amount} recorded\n\nSend "profit" to see combined totals`, nextStep: 'active' };
+        } else {
+          return { text: `❌ Example: "cash 1500"`, nextStep: 'active' };
+        }
       }
       
-      else if (msg === 'help') {
-        return { text: `📖 Commands:\n• sale 1500 - Add sale\n• expense 800 stock - Add expense\n• profit - See today's profit\n• report - See weekly summary\n• agent - Become a DukaApp agent`, nextStep: 'active' };
+      else if (msg.startsWith('cashexpense ')) {
+        let parts = msg.split(' ');
+        let amount = parseFloat(parts[1]);
+        let category = parts[2] || 'cash_expense';
+        if (!isNaN(amount)) {
+          await db.run(`INSERT INTO cash_transactions (phone, amount, type, category, description) VALUES (?, ?, 'expense', ?, ?)`, phone, amount, category, msg);
+          return { text: `✅ Cash Expense: KES ${amount} (${category}) recorded\n\nSend "profit" to see combined totals`, nextStep: 'active' };
+        } else {
+          return { text: `❌ Example: "cashexpense 800 rent"`, nextStep: 'active' };
+        }
+      }
+      
+      // ==================== CREDIT CUSTOMERS ====================
+      else if (msg.startsWith('addcustomer ')) {
+        let parts = msg.split(' ');
+        let customerName = parts.slice(1, -1).join(' ');
+        let customerPhone = parts[parts.length - 1];
+        
+        if (customerName && customerPhone) {
+          await db.run(`INSERT INTO credit_customers (shop_phone, customer_name, customer_phone) VALUES (?, ?, ?)`, phone, customerName, customerPhone);
+          return { text: `✅ Customer "${customerName}" (${customerPhone}) added!\n\nSend "credit ${customerName} 5000 goods" to record credit sale`, nextStep: 'active' };
+        } else {
+          return { text: `❌ Example: "addcustomer John Maina 0712345678"`, nextStep: 'active' };
+        }
+      }
+      
+      // ==================== CREDIT SALES (Goods on Credit) ====================
+      else if (msg.startsWith('credit ')) {
+        let parts = msg.split(' ');
+        let customerName = parts[1];
+        let amount = parseFloat(parts[2]);
+        let description = parts.slice(3).join(' ') || 'goods';
+        
+        let customer = await db.get(`SELECT * FROM credit_customers WHERE shop_phone = ? AND customer_name LIKE ?`, phone, `%${customerName}%`);
+        
+        if (!customer) {
+          return { text: `❌ Customer "${customerName}" not found.\n\nAdd customer first: "addcustomer ${customerName} [phone]"`, nextStep: 'active' };
+        }
+        
+        if (!isNaN(amount)) {
+          await db.run(`INSERT INTO credit_sales (shop_phone, customer_id, amount, description) VALUES (?, ?, ?, ?)`, phone, customer.id, amount, description);
+          return { text: `✅ Credit Sale: KES ${amount} to ${customer.customer_name}\nDescription: ${description}\n\nSend "pay ${customerName} ${amount}" when paid`, nextStep: 'active' };
+        } else {
+          return { text: `❌ Example: "credit John 5000 maize flour"`, nextStep: 'active' };
+        }
+      }
+      
+      // ==================== CREDIT PAYMENTS ====================
+      else if (msg.startsWith('pay ')) {
+        let parts = msg.split(' ');
+        let customerName = parts[1];
+        let amount = parseFloat(parts[2]);
+        
+        let customer = await db.get(`SELECT * FROM credit_customers WHERE shop_phone = ? AND customer_name LIKE ?`, phone, `%${customerName}%`);
+        
+        if (!customer) {
+          return { text: `❌ Customer "${customerName}" not found.`, nextStep: 'active' };
+        }
+        
+        let pendingCredits = await db.all(`SELECT * FROM credit_sales WHERE customer_id = ? AND status = 'pending' ORDER BY date ASC`, customer.id);
+        
+        if (pendingCredits.length === 0) {
+          return { text: `✅ No pending credits for ${customer.customer_name}`, nextStep: 'active' };
+        }
+        
+        let remainingAmount = amount;
+        let payments = [];
+        
+        for (let credit of pendingCredits) {
+          if (remainingAmount <= 0) break;
+          let paidAmount = Math.min(credit.amount, remainingAmount);
+          await db.run(`INSERT INTO credit_payments (credit_sale_id, amount) VALUES (?, ?)`, credit.id, paidAmount);
+          
+          let totalPaid = await db.get(`SELECT SUM(amount) as total FROM credit_payments WHERE credit_sale_id = ?`, credit.id);
+          if (totalPaid.total >= credit.amount) {
+            await db.run(`UPDATE credit_sales SET status = 'paid' WHERE id = ?`, credit.id);
+          }
+          
+          payments.push(`KES ${paidAmount} for ${credit.description}`);
+          remainingAmount -= paidAmount;
+        }
+        
+        let responseText = `✅ Received KES ${amount} from ${customer.customer_name}\n\nPayment applied to:\n${payments.join('\n')}`;
+        if (remainingAmount > 0) {
+          responseText += `\n\nRemaining credit: KES ${remainingAmount}`;
+        }
+        return { text: responseText, nextStep: 'active' };
+      }
+      
+      // ==================== CREDIT SUMMARY ====================
+      else if (msg === 'credits') {
+        let customers = await db.all(`SELECT * FROM credit_customers WHERE shop_phone = ?`, phone);
+        
+        if (customers.length === 0) {
+          return { text: `📋 No credit customers yet.\n\nAdd one: "addcustomer [name] [phone]"`, nextStep: 'active' };
+        }
+        
+        let summary = `📋 *CREDIT SUMMARY*\n\n`;
+        for (let customer of customers) {
+          let pendingCredits = await db.all(`SELECT * FROM credit_sales WHERE customer_id = ? AND status = 'pending'`, customer.id);
+          let totalDue = pendingCredits.reduce((sum, c) => sum + c.amount, 0);
+          
+          if (totalDue > 0) {
+            summary += `👤 ${customer.customer_name}\n`;
+            summary += `   Due: KES ${totalDue}\n`;
+            for (let credit of pendingCredits) {
+              summary += `   • ${credit.description}: KES ${credit.amount}\n`;
+            }
+            summary += `\n`;
+          }
+        }
+        return { text: summary, nextStep: 'active' };
+      }
+      
+      // ==================== PROFIT REPORTS ====================
+      else if (msg === 'profit') {
+        let today = new Date().toISOString().split('T')[0];
+        
+        let mpSales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'sale' AND date = ?`, phone, today);
+        let mpExpenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`, phone, today);
+        let cashSales = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'sale' AND date = ?`, phone, today);
+        let cashExpenses = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'expense' AND date = ?`, phone, today);
+        
+        let totalSales = (mpSales?.total || 0) + (cashSales?.total || 0);
+        let totalExpenses = (mpExpenses?.total || 0) + (cashExpenses?.total || 0);
+        let profit = totalSales - totalExpenses;
+        
+        let pendingCredits = await db.all(`SELECT cs.amount FROM credit_sales cs JOIN credit_customers cc ON cs.customer_id = cc.id WHERE cc.shop_phone = ? AND cs.status = 'pending'`, phone);
+        let totalCredit = pendingCredits.reduce((sum, c) => sum + c.amount, 0);
+        
+        let response = `📊 *TODAY'S REPORT* (${today})\n\n` +
+                       `💳 M-Pesa Sales: KES ${mpSales?.total || 0}\n` +
+                       `💵 Cash Sales: KES ${cashSales?.total || 0}\n` +
+                       `━━━━━━━━━━━━━━━━━━\n` +
+                       `📈 TOTAL SALES: KES ${totalSales}\n` +
+                       `📉 TOTAL EXPENSES: KES ${totalExpenses}\n` +
+                       `✅ PROFIT: KES ${profit}\n`;
+        
+        if (totalCredit > 0) {
+          response += `\n⚠️ Credit outstanding: KES ${totalCredit}\nSend "credits" for details`;
+        }
+        return { text: response, nextStep: 'active' };
+      }
+      
+      else if (msg === 'totalprofit') {
+        let today = new Date().toISOString().split('T')[0];
+        
+        let mpSales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'sale' AND date = ?`, phone, today);
+        let mpExpenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`, phone, today);
+        let cashSales = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'sale' AND date = ?`, phone, today);
+        let cashExpenses = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'expense' AND date = ?`, phone, today);
+        
+        let totalSales = (mpSales?.total || 0) + (cashSales?.total || 0);
+        let totalExpenses = (mpExpenses?.total || 0) + (cashExpenses?.total || 0);
+        let profit = totalSales - totalExpenses;
+        
+        return {
+          text: `📊 *TODAY'S COMPLETE REPORT* (${today})\n\n` +
+                `💰 M-Pesa Sales: KES ${mpSales?.total || 0}\n` +
+                `💵 Cash Sales: KES ${cashSales?.total || 0}\n` +
+                `📦 M-Pesa Expenses: KES ${mpExpenses?.total || 0}\n` +
+                `💸 Cash Expenses: KES ${cashExpenses?.total || 0}\n` +
+                `━━━━━━━━━━━━━━━━━━\n` +
+                `📈 TOTAL SALES: KES ${totalSales}\n` +
+                `📉 TOTAL EXPENSES: KES ${totalExpenses}\n` +
+                `✅ PROFIT: KES ${profit}\n\n` +
+                `Send "credits" to see credit customers`,
+          nextStep: 'active'
+        };
       }
       
       else if (msg === 'report') {
         let sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'sale' AND date >= date('now', '-7 days')`, phone);
         let expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date >= date('now', '-7 days')`, phone);
-        let salesTotal = sales?.total || 0;
-        let expensesTotal = expenses?.total || 0;
-        let profit = salesTotal - expensesTotal;
-        return { text: `📈 Last 7 Days\n\nSales: KES ${salesTotal}\nExpenses: KES ${expensesTotal}\nProfit: KES ${profit}\n\nSend "profit" for today only`, nextStep: 'active' };
+        let cashSales = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'sale' AND date >= date('now', '-7 days')`, phone);
+        let cashExpenses = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'expense' AND date >= date('now', '-7 days')`, phone);
+        
+        let totalSales = (sales?.total || 0) + (cashSales?.total || 0);
+        let totalExpenses = (expenses?.total || 0) + (cashExpenses?.total || 0);
+        let profit = totalSales - totalExpenses;
+        
+        return { text: `📈 Last 7 Days\n\nM-Pesa + Cash Combined\nSales: KES ${totalSales}\nExpenses: KES ${totalExpenses}\nProfit: KES ${profit}`, nextStep: 'active' };
+      }
+      
+      // ==================== HELP COMMAND ====================
+      else if (msg === 'help') {
+        return {
+          text: `📖 *DUKAAPP COMMANDS*\n\n` +
+                `💳 M-PESA:\n• sale [amount]\n• expense [amount] [cat]\n\n` +
+                `💵 CASH:\n• cash [amount]\n• cashexpense [amount] [cat]\n\n` +
+                `📝 CREDIT:\n• addcustomer [name] [phone]\n• credit [customer] [amount] [desc]\n• pay [customer] [amount]\n• credits\n\n` +
+                `📊 REPORTS:\n• profit - Today (M-Pesa + Cash)\n• totalprofit - Detailed combined\n• report - Weekly\n• credits - Credit summary\n\n` +
+                `🤝 AGENT:\n• agent - Join agent program\n\n` +
+                `Send "agent" to earn commissions!`,
+          nextStep: 'active'
+        };
       }
       
       else if (msg === 'agent') {
-        return { text: `🤝 Want to earn money with DukaApp?\n\nJoin our agent program!\n\n• KES 200 per shop you sign up\n• 10% recurring commission for 3 months\n\nSign up here: https://dukaapp.online/agent-signup\n\nAlready an agent? Go to: https://dukaapp.online/dashboard?code=YOURCODE`, nextStep: 'active' };
+        return {
+          text: `🤝 Want to earn money with DukaApp?\n\nJoin our agent program!\n\n• KES 200 per shop you sign up\n• 10% recurring commission for 3 months\n\nSign up here: https://dukaapp.online/agent-signup\n\nAlready an agent? Go to: https://dukaapp.online/dashboard?code=YOURCODE`,
+          nextStep: 'active'
+        };
       }
       
       else {
-        return { text: `❌ I didn't understand "${msg}".\n\nTry:\n• sale 1500\n• expense 800 stock\n• profit\n• report\n• help\n• agent`, nextStep: 'active' };
+        return { text: `❌ Command not recognized.\n\nSend "help" to see all commands.`, nextStep: 'active' };
       }
       
     default:
