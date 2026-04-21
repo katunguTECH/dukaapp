@@ -362,8 +362,8 @@ app.get('/start-trial', (req, res) => {
     <html lang="en">
     <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Redirecting to WhatsApp - DukaApp</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+        <title>Start Your Free Trial - DukaApp</title>
         <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
@@ -378,10 +378,11 @@ app.get('/start-trial', (req, res) => {
             .card {
                 background: white;
                 border-radius: 30px;
-                padding: 40px;
+                padding: 40px 30px;
                 max-width: 500px;
+                width: 100%;
                 text-align: center;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                box-shadow: 0 25px 50px -12px rgba(0,0,0,0.25);
                 animation: fadeIn 0.5s ease;
             }
             @keyframes fadeIn {
@@ -389,13 +390,18 @@ app.get('/start-trial', (req, res) => {
                 to { opacity: 1; transform: translateY(0); }
             }
             .logo {
-                font-size: 48px;
+                font-size: 42px;
                 font-weight: 800;
                 background: linear-gradient(135deg, #0F2B3D 0%, #1B4A6F 100%);
                 -webkit-background-clip: text;
                 background-clip: text;
                 color: transparent;
-                margin-bottom: 20px;
+                margin-bottom: 10px;
+            }
+            .tagline {
+                color: #6B7280;
+                font-size: 14px;
+                margin-bottom: 30px;
             }
             .whatsapp-icon {
                 background: #25D366;
@@ -406,9 +412,18 @@ app.get('/start-trial', (req, res) => {
                 align-items: center;
                 justify-content: center;
                 margin: 0 auto 20px;
+                box-shadow: 0 10px 25px -5px rgba(37, 211, 102, 0.3);
             }
-            h1 { color: #1F2937; margin-bottom: 15px; font-size: 28px; }
-            p { color: #6B7280; margin-bottom: 25px; line-height: 1.6; }
+            h1 {
+                color: #1F2937;
+                margin-bottom: 12px;
+                font-size: 28px;
+            }
+            p {
+                color: #6B7280;
+                margin-bottom: 25px;
+                line-height: 1.6;
+            }
             .loading {
                 display: inline-block;
                 width: 40px;
@@ -419,45 +434,107 @@ app.get('/start-trial', (req, res) => {
                 animation: spin 1s linear infinite;
                 margin: 20px 0;
             }
-            @keyframes spin { to { transform: rotate(360deg); } }
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+            .countdown {
+                font-size: 14px;
+                color: #9CA3AF;
+                margin-top: 10px;
+            }
             .manual-link {
                 background: #F3F4F6;
-                padding: 15px;
-                border-radius: 15px;
-                margin-top: 20px;
+                padding: 20px;
+                border-radius: 20px;
+                margin-top: 25px;
+            }
+            .manual-link p {
+                margin-bottom: 12px;
+                font-size: 14px;
+            }
+            .message-code {
+                background: white;
+                padding: 12px;
+                border-radius: 12px;
+                font-family: monospace;
+                font-size: 16px;
+                font-weight: 600;
+                color: #0F2B3D;
+                margin: 10px 0;
+                border: 1px solid #e5e7eb;
             }
             .btn {
                 background: #25D366;
                 color: white;
-                padding: 12px 24px;
-                border-radius: 40px;
+                padding: 14px 28px;
+                border-radius: 50px;
                 text-decoration: none;
                 display: inline-block;
-                margin-top: 15px;
+                margin-top: 10px;
                 font-weight: 600;
+                transition: transform 0.2s, background 0.2s;
             }
-            .countdown { font-size: 14px; color: #9CA3AF; margin-top: 20px; }
+            .btn:hover {
+                background: #20b859;
+                transform: scale(1.02);
+            }
+            .features {
+                display: flex;
+                justify-content: center;
+                gap: 20px;
+                margin-top: 25px;
+                flex-wrap: wrap;
+            }
+            .feature {
+                font-size: 12px;
+                color: #9CA3AF;
+            }
+            .feature span {
+                display: block;
+                font-size: 20px;
+                margin-bottom: 5px;
+            }
+            @media (max-width: 480px) {
+                .card { padding: 30px 20px; }
+                h1 { font-size: 24px; }
+            }
         </style>
     </head>
     <body>
         <div class="card">
             <div class="logo">DukaApp</div>
+            <div class="tagline">Know your daily profit</div>
+            
             <div class="whatsapp-icon">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="40" height="40" fill="white">
                     <path d="M12.04 2.5c-5.3 0-9.6 4.3-9.6 9.6 0 1.7.4 3.3 1.2 4.8L2.5 22l5.2-1.4c1.4.7 3 1.1 4.6 1.1 5.3 0 9.6-4.3 9.6-9.6 0-5.3-4.3-9.6-9.6-9.6z"/>
                     <path fill="white" d="M12.04 4.5c4.2 0 7.6 3.4 7.6 7.6 0 4.2-3.4 7.6-7.6 7.6-1.4 0-2.7-.4-3.8-1L5.5 20l1.3-4.8c-.6-1.1-.9-2.3-.9-3.6 0-4.2 3.4-7.6 7.6-7.6z"/>
                 </svg>
             </div>
+            
             <h1>Opening WhatsApp...</h1>
-            <p>You'll be redirected to WhatsApp to start your free trial with DukaApp.</p>
+            <p>You'll be redirected to WhatsApp to start your 14-day free trial with DukaApp.</p>
+            
             <div class="loading"></div>
             <p class="countdown">Redirecting in <span id="countdown">5</span> seconds...</p>
+            
             <div class="manual-link">
-                <p>📱 Didn't redirect automatically?</p>
-                <p>Copy this message: <strong>join grain-produce</strong></p>
-                <a href="https://wa.me/14155238886?text=join%20grain-produce" class="btn" id="manualButton">Open WhatsApp →</a>
+                <p>📱 <strong>Didn't redirect automatically?</strong></p>
+                <p>Copy this message and send it to our WhatsApp number:</p>
+                <div class="message-code">join DukaApp</div>
+                <a href="https://wa.me/14155238886?text=join%20DukaApp" class="btn" id="manualButton">
+                    Open WhatsApp →
+                </a>
+            </div>
+            
+            <div class="features">
+                <div class="feature"><span>💰</span> Track sales</div>
+                <div class="feature"><span>📊</span> Daily profit</div>
+                <div class="feature"><span>💳</span> M-Pesa + Cash</div>
+                <div class="feature"><span>📝</span> Credit customers</div>
             </div>
         </div>
+        
         <script>
             let seconds = 5;
             const countdownEl = document.getElementById('countdown');
@@ -466,7 +543,7 @@ app.get('/start-trial', (req, res) => {
                 countdownEl.textContent = seconds;
                 if (seconds <= 0) {
                     clearInterval(countdownInterval);
-                    window.location.href = 'https://wa.me/14155238886?text=join%20grain-produce';
+                    window.location.href = 'https://wa.me/14155238886?text=join%20DukaApp';
                 }
             }, 1000);
             document.getElementById('manualButton').addEventListener('click', () => clearInterval(countdownInterval));
@@ -530,7 +607,7 @@ async function handleMessage(phone, msg, step) {
       };
       
     case 'active':
-      // ==================== M-PESA TRANSACTIONS ====================
+      // M-PESA TRANSACTIONS
       if (msg.startsWith('sale ')) {
         let amount = parseFloat(msg.split(' ')[1]);
         if (!isNaN(amount)) {
@@ -553,7 +630,7 @@ async function handleMessage(phone, msg, step) {
         }
       }
       
-      // ==================== CASH TRANSACTIONS ====================
+      // CASH TRANSACTIONS
       else if (msg.startsWith('cash ')) {
         let amount = parseFloat(msg.split(' ')[1]);
         if (!isNaN(amount)) {
@@ -576,7 +653,7 @@ async function handleMessage(phone, msg, step) {
         }
       }
       
-      // ==================== CREDIT CUSTOMERS ====================
+      // CREDIT CUSTOMERS
       else if (msg.startsWith('addcustomer ')) {
         let parts = msg.split(' ');
         let customerName = parts.slice(1, -1).join(' ');
@@ -590,7 +667,7 @@ async function handleMessage(phone, msg, step) {
         }
       }
       
-      // ==================== CREDIT SALES (Goods on Credit) ====================
+      // CREDIT SALES
       else if (msg.startsWith('credit ')) {
         let parts = msg.split(' ');
         let customerName = parts[1];
@@ -611,7 +688,7 @@ async function handleMessage(phone, msg, step) {
         }
       }
       
-      // ==================== CREDIT PAYMENTS ====================
+      // CREDIT PAYMENTS
       else if (msg.startsWith('pay ')) {
         let parts = msg.split(' ');
         let customerName = parts[1];
@@ -653,7 +730,7 @@ async function handleMessage(phone, msg, step) {
         return { text: responseText, nextStep: 'active' };
       }
       
-      // ==================== CREDIT SUMMARY ====================
+      // CREDIT SUMMARY
       else if (msg === 'credits') {
         let customers = await db.all(`SELECT * FROM credit_customers WHERE shop_phone = ?`, phone);
         
@@ -678,7 +755,7 @@ async function handleMessage(phone, msg, step) {
         return { text: summary, nextStep: 'active' };
       }
       
-      // ==================== PROFIT REPORTS ====================
+      // PROFIT REPORTS
       else if (msg === 'profit') {
         let today = new Date().toISOString().split('T')[0];
         
@@ -738,57 +815,4 @@ async function handleMessage(phone, msg, step) {
       else if (msg === 'report') {
         let sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'sale' AND date >= date('now', '-7 days')`, phone);
         let expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date >= date('now', '-7 days')`, phone);
-        let cashSales = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'sale' AND date >= date('now', '-7 days')`, phone);
-        let cashExpenses = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'expense' AND date >= date('now', '-7 days')`, phone);
-        
-        let totalSales = (sales?.total || 0) + (cashSales?.total || 0);
-        let totalExpenses = (expenses?.total || 0) + (cashExpenses?.total || 0);
-        let profit = totalSales - totalExpenses;
-        
-        return { text: `📈 Last 7 Days\n\nM-Pesa + Cash Combined\nSales: KES ${totalSales}\nExpenses: KES ${totalExpenses}\nProfit: KES ${profit}`, nextStep: 'active' };
-      }
-      
-      // ==================== HELP COMMAND ====================
-      else if (msg === 'help') {
-        return {
-          text: `📖 *DUKAAPP COMMANDS*\n\n` +
-                `💳 M-PESA:\n• sale [amount]\n• expense [amount] [cat]\n\n` +
-                `💵 CASH:\n• cash [amount]\n• cashexpense [amount] [cat]\n\n` +
-                `📝 CREDIT:\n• addcustomer [name] [phone]\n• credit [customer] [amount] [desc]\n• pay [customer] [amount]\n• credits\n\n` +
-                `📊 REPORTS:\n• profit - Today (M-Pesa + Cash)\n• totalprofit - Detailed combined\n• report - Weekly\n• credits - Credit summary\n\n` +
-                `🤝 AGENT:\n• agent - Join agent program\n\n` +
-                `Send "agent" to earn commissions!`,
-          nextStep: 'active'
-        };
-      }
-      
-      else if (msg === 'agent') {
-        return {
-          text: `🤝 Want to earn money with DukaApp?\n\nJoin our agent program!\n\n• KES 200 per shop you sign up\n• 10% recurring commission for 3 months\n\nSign up here: https://dukaapp.online/agent-signup\n\nAlready an agent? Go to: https://dukaapp.online/dashboard?code=YOURCODE`,
-          nextStep: 'active'
-        };
-      }
-      
-      else {
-        return { text: `❌ Command not recognized.\n\nSend "help" to see all commands.`, nextStep: 'active' };
-      }
-      
-    default:
-      return { text: `Welcome back! Send "help" to see options.`, nextStep: 'active' };
-  }
-}
-
-// ==================== TEST ROUTES ====================
-
-app.get('/test', (req, res) => {
-  res.json({ status: 'ok', message: 'Server is running' });
-});
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`✅ DukaApp running on port ${PORT}`);
-});
+       
