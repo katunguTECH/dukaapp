@@ -815,4 +815,57 @@ async function handleMessage(phone, msg, step) {
       else if (msg === 'report') {
         let sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'sale' AND date >= date('now', '-7 days')`, phone);
         let expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date >= date('now', '-7 days')`, phone);
-       
+        let cashSales = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'sale' AND date >= date('now', '-7 days')`, phone);
+        let cashExpenses = await db.get(`SELECT SUM(amount) as total FROM cash_transactions WHERE phone = ? AND type = 'expense' AND date >= date('now', '-7 days')`, phone);
+        
+        let totalSales = (sales?.total || 0) + (cashSales?.total || 0);
+        let totalExpenses = (expenses?.total || 0) + (cashExpenses?.total || 0);
+        let profit = totalSales - totalExpenses;
+        
+        return { text: `📈 Last 7 Days\n\nM-Pesa + Cash Combined\nSales: KES ${totalSales}\nExpenses: KES ${totalExpenses}\nProfit: KES ${profit}`, nextStep: 'active' };
+      }
+      
+      // HELP COMMAND
+      else if (msg === 'help') {
+        return {
+          text: `📖 *DUKAAPP COMMANDS*\n\n` +
+                `💳 M-PESA:\n• sale [amount]\n• expense [amount] [cat]\n\n` +
+                `💵 CASH:\n• cash [amount]\n• cashexpense [amount] [cat]\n\n` +
+                `📝 CREDIT:\n• addcustomer [name] [phone]\n• credit [customer] [amount] [desc]\n• pay [customer] [amount]\n• credits\n\n` +
+                `📊 REPORTS:\n• profit - Today (M-Pesa + Cash)\n• totalprofit - Detailed combined\n• report - Weekly\n• credits - Credit summary\n\n` +
+                `🤝 AGENT:\n• agent - Join agent program\n\n` +
+                `Send "agent" to earn commissions!`,
+          nextStep: 'active'
+        };
+      }
+      
+      else if (msg === 'agent') {
+        return {
+          text: `🤝 Want to earn money with DukaApp?\n\nJoin our agent program!\n\n• KES 200 per shop you sign up\n• 10% recurring commission for 3 months\n\nSign up here: https://dukaapp.online/agent-signup\n\nAlready an agent? Go to: https://dukaapp.online/dashboard?code=YOURCODE`,
+          nextStep: 'active'
+        };
+      }
+      
+      else {
+        return { text: `❌ Command not recognized.\n\nSend "help" to see all commands.`, nextStep: 'active' };
+      }
+      
+    default:
+      return { text: `Welcome back! Send "help" to see options.`, nextStep: 'active' };
+  }
+}
+
+// ==================== TEST ROUTES ====================
+
+app.get('/test', (req, res) => {
+  res.json({ status: 'ok', message: 'Server is running' });
+});
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`✅ DukaApp running on port ${PORT}`);
+});
