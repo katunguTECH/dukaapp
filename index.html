@@ -507,8 +507,8 @@
         <h1>Unajua <span class="highlight">Faida Yako</span> ya Leo?</h1>
         <p>DukaApp automatically calculates your daily profit from M-Pesa messages. Get a clear report every evening. Simple, fast, and made for Kenyan dukas.</p>
         <div class="hero-buttons">
-            <a href="https://wa.me/14155238886?text=join%20grain-produce" class="btn-primary">Start Free Trial on WhatsApp →</a>
-            <a href="#agreements" class="btn-secondary">View Agreements</a>
+            <a href="/start-trial" class="btn-primary">Start Free Trial →</a>
+            <a href="#how-it-works" class="btn-secondary">How it works</a>
         </div>
         <p style="font-size: 14px; color: #6B7280;">✅ 14 days free. No credit card. Cancel anytime.</p>
     </div>
@@ -647,7 +647,7 @@
                         <input type="checkbox" id="acceptCustomer" onchange="toggleCustomerButton()">
                         I have read and agree to the DukaApp Customer Agreement
                     </label>
-                    <button id="customerProceedBtn" onclick="proceedToWhatsApp('customer')" disabled>Proceed to WhatsApp →</button>
+                    <button id="customerProceedBtn" onclick="proceedToWhatsApp()" disabled>Proceed to WhatsApp →</button>
                 </div>
             </div>
 
@@ -795,7 +795,7 @@
                         <input type="checkbox" id="acceptCustomerSw" onchange="toggleCustomerSwButton()">
                         Nimesoma na nakubali Makubaliano ya Mteja wa DukaApp
                     </label>
-                    <button id="customerSwProceedBtn" onclick="proceedToWhatsApp('customer')" disabled>Endelea kwa WhatsApp →</button>
+                    <button id="customerSwProceedBtn" onclick="proceedToWhatsApp()" disabled>Endelea kwa WhatsApp →</button>
                 </div>
             </div>
         </div>
@@ -829,7 +829,7 @@
     <div class="cta-banner">
         <h2>Ready to know your real profit?</h2>
         <p style="margin-bottom: 8px;">Join 100+ duka owners already tracking daily earnings.</p>
-        <a href="https://wa.me/14155238886?text=join%20grain-produce" class="btn-primary" style="background: #25A55C;">Start Free Trial →</a>
+        <a href="/start-trial" class="btn-primary" style="background: #25A55C;">Start Free Trial →</a>
         <p style="margin-top: 24px; font-size: 14px; opacity: 0.8;">No app download. Works on any phone.</p>
     </div>
 
@@ -881,7 +881,6 @@
         tab.addEventListener('click', () => {
             tabs.forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
-            
             contents.forEach(content => content.style.display = 'none');
             const tabId = tab.getAttribute('data-tab');
             document.getElementById(`tab-${tabId}`).style.display = 'block';
@@ -916,9 +915,9 @@
         button.disabled = !checkbox.checked;
     }
     
-    // Proceed to WhatsApp (Customer)
-    function proceedToWhatsApp(type) {
-        window.location.href = 'https://wa.me/14155238886?text=join%20grain-produce';
+    // Proceed to WhatsApp (Customer) - Now uses /start-trial
+    function proceedToWhatsApp() {
+        window.location.href = '/start-trial';
     }
     
     // Proceed to Agent Signup
