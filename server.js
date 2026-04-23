@@ -855,6 +855,149 @@ async function handleMessage(phone, msg, step) {
   }
 }
 
+// ==================== ADMIN DASHBOARD API ====================
+
+// Admin dashboard data
+app.get('/api/admin/dashboard', async (req, res) => {
+    const { period, startDate, endDate } = req.query;
+    
+    let dateFilter = '';
+    
+    // Set date range based on period
+    if (startDate && endDate) {
+        dateFilter = `AND date(created_at) BETWEEN '${startDate}' AND '${endDate}'`;
+    } else if (period === 'daily') {
+        dateFilter = `AND date(created_at) = date('now')`;
+    } else if (period === 'weekly') {
+        dateFilter = `AND date(created_at) >= date('now', '-7 days')`;
+    } else if (period === 'monthly') {
+        dateFilter = `AND date(created_at) >= date('now', '-30 days')`;
+    }
+    
+    // Get total users
+    const totalUsersResult = await db.get(`SELECT COUNT(*) as count FROM users WHERE 1=1 ${dateFilter}`);
+    const totalUsers = totalUsersResult?.count || 0;
+    
+    // Get active trials (users who joined in last 14 days and not paid)
+    const activeTrialsResult = await db.get(`
+        SELECT COUNT(*) as count FROM users 
+        WHERE julianday(date('now')) - julianday(created_at) <= 14
+        AND phone NOT IN (SELECT DISTINCT shop_phone FROM agent_signups WHERE commission_paid = 1)
+        ${dateFilter}
+    `);
+    const activeTrials = activeTrialsResult?.count || 0;
+    
+    // Get paid users (simplified - users with agent signups that converted)
+    const paidUsersResult = await db.get(`
+        SELECT COUNT(DISTINCT shop_phone) as count FROM agent_signups WHERE status = 'active'
+    `);
+    const paidUsers = paidUsersResult?.count || 0;
+    
+    // Calculate conversion rate
+    const conversionRate = totalUsers > 0 ? Math.round((paidUsers / totalUsers) * 100) : 0;
+    
+    // Get chart data (signups over time)
+    let chartQuery = `
+        SELECT date(created_at) as date, COUNT(*) as count
+        FROM users
+        WHERE 1=1 ${dateFilter}
+        GROUP BY date(created_at)
+        ORDER BY date(created_at) ASC
+    `;
+    const chartDataRaw = await db.all(chartQuery);
+    
+    const chartData = chartDataRaw.map(row => ({
+        label: row.date,
+        count: row.count
+    }));
+    
+    // Get users list with transaction counts
+    const usersQuery = `
+        SELECT 
+            u.phone,
+            u.name,
+            date(u.created_at) as trial_start,
+            date(u.created_at, '+14 days') as trial_end,
+            CASE 
+                WHEN julianday(date('now')) - julianday(u.created_at) > 14 THEN 'expired'
+                WHEN a.shop_phone IS NOT NULL THEN 'paid'
+                ELSE 'trial'
+            END as status,
+            (SELECT COUNT(*) FROM transactions WHERE phone = u.phone) + 
+            (SELECT COUNT(*) FROM cash_transactions WHERE phone = u.phone) as transaction_count
+        FROM users u
+        LEFT JOIN agent_signups a ON u.phone = a.shop_phone
+        WHERE 1=1 ${dateFilter}
+        ORDER BY u.created_at DESC
+        LIMIT 100
+    `;
+    const users = await db.all(usersQuery);
+    
+    res.json({
+        success: true,
+        stats: {
+            totalUsers,
+            activeTrials,
+            paidUsers,
+            conversionRate: `${conversionRate}%`,
+            totalTrend: '+0',
+            trialTrend: '+0',
+            paidTrend: '+0',
+            conversionTrend: '+0'
+        },
+        chartData,
+        users
+    });
+});
+
+// Export to CSV
+app.get('/api/admin/export', async (req, res) => {
+    const { period, startDate, endDate } = req.query;
+    
+    let dateFilter = '';
+    if (startDate && endDate) {
+        dateFilter = `AND date(created_at) BETWEEN '${startDate}' AND '${endDate}'`;
+    } else if (period === 'daily') {
+        dateFilter = `AND date(created_at) = date('now')`;
+    } else if (period === 'weekly') {
+        dateFilter = `AND date(created_at) >= date('now', '-7 days')`;
+    } else if (period === 'monthly') {
+        dateFilter = `AND date(created_at) >= date('now', '-30 days')`;
+    }
+    
+    const users = await db.all(`
+        SELECT 
+            u.phone,
+            u.name,
+            date(u.created_at) as trial_start,
+            date(u.created_at, '+14 days') as trial_end,
+            CASE 
+                WHEN julianday(date('now')) - julianday(u.created_at) > 14 THEN 'expired'
+                WHEN a.shop_phone IS NOT NULL THEN 'paid'
+                ELSE 'trial'
+            END as status
+        FROM users u
+        LEFT JOIN agent_signups a ON u.phone = a.shop_phone
+        WHERE 1=1 ${dateFilter}
+        ORDER BY u.created_at DESC
+    `);
+    
+    // Create CSV
+    let csv = 'Phone,Shop Name,Trial Start,Trial End,Status\n';
+    users.forEach(user => {
+        csv += `"${user.phone || ''}","${user.name || ''}","${user.trial_start || ''}","${user.trial_end || ''}","${user.status || ''}"\n`;
+    });
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=dukaapp-users-${new Date().toISOString().split('T')[0]}.csv`);
+    res.send(csv);
+});
+
+// Serve admin dashboard
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, 'admin.html'));
+});
+
 // ==================== TEST ROUTES ====================
 
 app.get('/test', (req, res) => {
