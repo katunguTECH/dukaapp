@@ -35,14 +35,10 @@
             border-bottom: 1px solid #e5e7eb;
         }
 
-        .logo {
-            font-size: 28px;
-            font-weight: 800;
-            background: linear-gradient(135deg, #0F2B3D 0%, #1B4A6F 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-            letter-spacing: -0.5px;
+        .logo img {
+            height: 40px;
+            width: auto;
+            display: block;
         }
 
         .nav-links {
@@ -483,15 +479,18 @@
             .navbar { flex-direction: column; }
             .section-title { font-size: 28px; }
             .chat-modal { width: 300px; right: 20px; bottom: 80px; }
+            .logo img { height: 32px; }
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <!-- Navigation -->
+    <!-- Navigation with Logo -->
     <div class="navbar">
-        <div class="logo">DukaApp</div>
+        <div class="logo">
+            <img src="DukaApp.png" alt="DukaApp Logo" style="height: 40px; width: auto;">
+        </div>
         <div class="nav-links">
             <a href="#features">Features</a>
             <a href="#how-it-works">How it works</a>
