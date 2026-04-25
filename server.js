@@ -521,8 +521,8 @@ app.get('/start-trial', (req, res) => {
             <div class="manual-link">
                 <p>📱 <strong>Didn't redirect automatically?</strong></p>
                 <p>Copy this message and send it to our WhatsApp number:</p>
-                <div class="message-code">join DukaApp</div>
-                <a href="https://wa.me/14155238886?text=join%20DukaApp" class="btn" id="manualButton">
+                <div class="message-code">join adjective-weigh</div>
+                <a href="https://wa.me/14155238886?text=join%20adjective-weigh" class="btn" id="manualButton">
                     Open WhatsApp →
                 </a>
             </div>
@@ -543,7 +543,7 @@ app.get('/start-trial', (req, res) => {
                 countdownEl.textContent = seconds;
                 if (seconds <= 0) {
                     clearInterval(countdownInterval);
-                    window.location.href = 'https://wa.me/14155238886?text=join%20DukaApp';
+                    window.location.href = 'https://wa.me/14155238886?text=join%20adjective-weigh';
                 }
             }, 1000);
             document.getElementById('manualButton').addEventListener('click', () => clearInterval(countdownInterval));
