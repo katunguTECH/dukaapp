@@ -585,8 +585,8 @@
         <h1>Unajua <span class="highlight">Faida Yako</span> ya Leo?</h1>
         <p>DukaApp automatically calculates your daily profit from M-Pesa messages. Get a clear report every evening. Simple, fast, and made for Kenyan dukas.</p>
         <div class="hero-buttons">
-            <!-- FIXED: Android intent that forces regular WhatsApp Messenger -->
-            <a href="intent://send/14155238886#Intent;scheme=whatsapp;package=com.whatsapp;action=android.intent.action.VIEW;end" class="btn-primary">Start Free Trial →</a>
+            <!-- FIXED: Multi-method WhatsApp opener -->
+            <a href="#" onclick="openWhatsApp()" class="btn-primary">Start Free Trial →</a>
             <a href="#" class="btn-video" id="watchVideoBtn">
                 ▶️ Watch Tutorial
             </a>
@@ -716,9 +716,9 @@
                 <h4>3. SUBSCRIPTION TERM AND FEES</h4>
                 <table>
                     <tr><th>Period</th><th>Fee</th><th>Payment Method</th></tr>
-                    <tr><td>Trial Period (first 14 days)</th><td>FREE</th><td>No payment required</th></tr>
-                    <tr><td>Monthly Subscription (after trial)</th><td>KES 299</th><td>M-Pesa Paybill</th></tr>
-                    <tr><td>Annual Subscription (optional)</th><td>KES 3,000 (2 months FREE)</th><td>M-Pesa Paybill</th></tr>
+                    <tr><td>Trial Period (first 14 days)</td><td>FREE</td><td>No payment required</td></tr>
+                    <tr><td>Monthly Subscription (after trial)</td><td>KES 299</td><td>M-Pesa Paybill</td></tr>
+                    <tr><td>Annual Subscription (optional)</td><td>KES 3,000 (2 months FREE)</td><td>M-Pesa Paybill</td></tr>
                 </table>
                 <p>Payment is due on the same day each month following the trial period. Late payment beyond 7 days may result in service suspension.</p>
                 
@@ -750,7 +750,6 @@
                         <input type="checkbox" id="acceptCustomer" onchange="toggleCustomerButton()">
                         I have read and agree to the DukaApp Customer Agreement
                     </label>
-                    <!-- FIXED: Android intent that forces regular WhatsApp Messenger -->
                     <button id="customerProceedBtn" onclick="proceedToWhatsApp()" disabled>Proceed to WhatsApp →</button>
                 </div>
             </div>
@@ -899,7 +898,6 @@
                         <input type="checkbox" id="acceptCustomerSw" onchange="toggleCustomerSwButton()">
                         Nimesoma na nakubali Makubaliano ya Mteja wa DukaApp
                     </label>
-                    <!-- FIXED: Android intent that forces regular WhatsApp Messenger -->
                     <button id="customerSwProceedBtn" onclick="proceedToWhatsApp()" disabled>Endelea kwa WhatsApp →</button>
                 </div>
             </div>
@@ -934,8 +932,8 @@
     <div class="cta-banner">
         <h2>Ready to know your real profit?</h2>
         <p style="margin-bottom: 8px;">Join 100+ duka owners already tracking daily earnings.</p>
-        <!-- FIXED: Android intent that forces regular WhatsApp Messenger -->
-        <a href="intent://send/14155238886#Intent;scheme=whatsapp;package=com.whatsapp;action=android.intent.action.VIEW;end" class="btn-primary" style="background: #25A55C;">Start Free Trial →</a>
+        <!-- FIXED: Multi-method WhatsApp opener -->
+        <a href="#" onclick="openWhatsApp()" class="btn-primary" style="background: #25A55C;">Start Free Trial →</a>
         <p style="margin-top: 24px; font-size: 14px; opacity: 0.8;">No app download. Works on any phone.</p>
     </div>
 
@@ -1022,9 +1020,33 @@
         button.disabled = !checkbox.checked;
     }
     
-    // FIXED: Proceed to WhatsApp (Customer) - Android intent that forces regular WhatsApp Messenger
+    // FIXED: Multi-method WhatsApp opener that works on all Android phones
+    function openWhatsApp() {
+        // Standard WhatsApp link
+        var waUrl = "https://wa.me/14155238886?text=START";
+        
+        // api.whatsapp.com format (often more reliable)
+        var apiUrl = "https://api.whatsapp.com/send?phone=14155238886&text=START";
+        
+        // Try opening in a new tab first (works in most browsers)
+        var newWindow = window.open(apiUrl, "_blank");
+        
+        // If that fails (popup blocked), try direct navigation
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+            setTimeout(function() {
+                window.location.href = waUrl;
+            }, 100);
+        }
+        
+        // Ultimate fallback after 2 seconds - show manual instructions
+        setTimeout(function() {
+            alert("If WhatsApp didn't open automatically:\n\n1. Open WhatsApp\n2. Send 'START' to +1 415 523 8886\n\nYour free trial will begin immediately!");
+        }, 2000);
+    }
+    
+    // Customer proceed function (for agreement checkboxes)
     function proceedToWhatsApp() {
-        window.location.href = "intent://send/14155238886#Intent;scheme=whatsapp;package=com.whatsapp;action=android.intent.action.VIEW;end";
+        openWhatsApp();
     }
     
     // Proceed to Agent Signup
