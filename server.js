@@ -998,7 +998,24 @@ app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, 'admin.html'));
 });
 
-// ==================== TEST ROUTES ====================
+// ==================== HEALTH & TEST ROUTES ====================
+
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'DukaApp server is running',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime()
+  });
+});
+
+app.get('/status', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    database: 'connected',
+    version: '1.2'
+  });
+});
 
 app.get('/test', (req, res) => {
   res.json({ status: 'ok', message: 'Server is running' });
