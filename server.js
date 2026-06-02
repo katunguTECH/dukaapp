@@ -1,4 +1,4 @@
-// server.js - Complete DukaApp Server with Full Subscriber Tracking
+// server.js - Complete DukaApp Server with Admin Dashboard & Password Protection
 const express = require('express');
 const { MessagingResponse } = require('twilio').twiml;
 const path = require('path');
@@ -26,6 +26,30 @@ const MPESA_API_BASE = MPESA_CONFIG.environment === "sandbox"
 
 // Store pending payments in memory
 const pendingPayments = {};
+
+// ============================================================
+// ADMIN PASSWORD PROTECTION
+// ============================================================
+
+const ADMIN_PASSWORD = "Dallas123!";
+
+function adminAuth(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  if (!authHeader) {
+    res.setHeader('WWW-Authenticate', 'Basic realm="Admin Access"');
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+  
+  const base64Credentials = authHeader.split(' ')[1];
+  const credentials = Buffer.from(base64Credentials, 'base64').toString('ascii');
+  const [username, password] = credentials.split(':');
+  
+  if (password === ADMIN_PASSWORD) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Invalid password' });
+  }
+}
 
 // ============================================================
 // DATABASE SETUP
@@ -482,8 +506,11 @@ async function getLowStockProducts(phone) {
 }
 
 // ============================================================
-// ADMIN API ENDPOINTS
+// ADMIN API ENDPOINTS (Password Protected)
 // ============================================================
+
+// Apply password protection to all admin API routes
+app.use('/api/admin', adminAuth);
 
 app.get('/api/admin/subscribers/stats', async (req, res) => {
   try {
@@ -572,6 +599,14 @@ app.get('/test', (req, res) => {
 });
 
 // ============================================================
+// ADMIN DASHBOARD PAGE
+// ============================================================
+
+app.get('/admin-dashboard', (req, res) => {
+  res.sendFile(path.join(__dirname, 'admin-dashboard.html'));
+});
+
+// ============================================================
 // M-PESA CALLBACK ENDPOINT
 // ============================================================
 
@@ -610,10 +645,6 @@ app.post('/mpesa-callback', async (req, res) => {
 
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-app.get('/admin-dashboard', (req, res) => {
-  res.sendFile(path.join(__dirname, 'admin-dashboard.html'));
 });
 
 app.get('/start-trial', (req, res) => {
@@ -835,7 +866,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ DukaApp server running on port ${PORT}`);
   console.log(`✅ Health check: /health`);
   console.log(`✅ WhatsApp webhook: /whatsapp`);
-  console.log(`✅ Admin dashboard: /admin-dashboard`);
+  console.log(`✅ Admin dashboard: /admin-dashboard (Password: Dallas123!)`);
   console.log(`✅ Subscriber tracking enabled`);
   console.log(`✅ M-Pesa STK Push enabled`);
   console.log(`✅ Stock management enabled`);
