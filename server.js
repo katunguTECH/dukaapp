@@ -1,4 +1,4 @@
-// server.js - Complete DukaApp Server with Admin Dashboard & Password Protection
+// server.js - Complete DukaApp Server with Permanent User Registration
 const express = require('express');
 const { MessagingResponse } = require('twilio').twiml;
 const path = require('path');
@@ -282,7 +282,7 @@ async function initiateSTKPush(phoneNumber, amount, accountReference, transactio
 }
 
 // ============================================================
-// SUBSCRIBER MANAGEMENT FUNCTIONS
+// SUBSCRIBER MANAGEMENT FUNCTIONS (PERMANENT STORAGE)
 // ============================================================
 
 async function recordNewSubscriber(phone, businessName, businessType, location) {
@@ -290,6 +290,15 @@ async function recordNewSubscriber(phone, businessName, businessType, location) 
   const trialEndDate = new Date();
   trialEndDate.setDate(trialEndDate.getDate() + 14);
   
+  // First, update the users table
+  await db.run(`
+    UPDATE users SET 
+      business_name = ?, business_type = ?, location = ?, 
+      registered = 1, trial_start_date = ?, trial_end_date = ?
+    WHERE phone = ?
+  `, businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(), phone);
+  
+  // Check if subscriber already exists
   const existing = await db.get('SELECT * FROM subscribers WHERE phone = ?', phone);
   
   if (!existing) {
@@ -308,7 +317,16 @@ async function recordNewSubscriber(phone, businessName, businessType, location) 
       VALUES (?, ?, ?, 'active')
     `, phone, now.toISOString(), trialEndDate.toISOString());
     
-    console.log(`📊 New subscriber recorded: ${phone}`);
+    console.log(`📊 New subscriber recorded: ${phone} - ${businessName}`);
+  } else {
+    // Update existing subscriber
+    await db.run(`
+      UPDATE subscribers SET 
+        business_name = ?, business_type = ?, location = ?,
+        trial_start_date = ?, trial_end_date = ?, updated_at = ?
+      WHERE phone = ?
+    `, businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(), now.toISOString(), phone);
+    console.log(`📊 Subscriber updated: ${phone}`);
   }
 }
 
@@ -416,19 +434,24 @@ async function activateSubscription(phone, paymentAmount, mpesaReceipt, checkout
 }
 
 // ============================================================
-// USER MANAGEMENT FUNCTIONS
+// USER MANAGEMENT FUNCTIONS (PERMANENT)
 // ============================================================
 
 async function getUser(phone) {
   let user = await db.get('SELECT * FROM users WHERE phone = ?', phone);
   
   if (!user) {
+    const now = new Date();
     const trialEndDate = new Date();
     trialEndDate.setDate(trialEndDate.getDate() + 14);
     
-    await db.run(`INSERT INTO users (phone, step, trial_start_date, trial_end_date, subscription_status) 
-                  VALUES (?, ?, ?, ?, 'trial')`,
-                  phone, 'none', new Date().toISOString(), trialEndDate.toISOString());
+    await db.run(`
+      INSERT INTO users (
+        phone, step, trial_start_date, trial_end_date, 
+        subscription_status, created_at
+      ) VALUES (?, ?, ?, ?, 'trial', ?)
+    `, phone, 'none', now.toISOString(), trialEndDate.toISOString(), now.toISOString());
+    
     user = await db.get('SELECT * FROM users WHERE phone = ?', phone);
     console.log(`🆕 Created new user: ${phone}`);
   }
@@ -509,7 +532,6 @@ async function getLowStockProducts(phone) {
 // ADMIN API ENDPOINTS (Password Protected)
 // ============================================================
 
-// Apply password protection to all admin API routes
 app.use('/api/admin', adminAuth);
 
 app.get('/api/admin/subscribers/stats', async (req, res) => {
@@ -676,7 +698,7 @@ app.get('/agent-signup', (req, res) => {
 });
 
 // ============================================================
-// WHATSAPP WEBHOOK - MAIN HANDLER
+// WHATSAPP WEBHOOK - MAIN HANDLER WITH PERMANENT REGISTRATION
 // ============================================================
 
 app.post('/whatsapp', async (req, res) => {
@@ -830,28 +852,126 @@ app.post('/whatsapp', async (req, res) => {
     res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
   
-  // REGISTRATION FLOW
+  // ============================================================
+  // REGISTRATION FLOW (Only for NEW users)
+  // ============================================================
+  
+  // Step 2: Waiting for business name
   if (user.step === 'waiting_for_business_name') {
     await updateUser(userPhone, { business_name: incomingMsg, step: 'waiting_for_business_type' });
     twiml.message(`Great! What type of business do you run?\n\nExamples: Retail Shop, Grocery, Hardware, Restaurant, Salon, Boutique, etc.\n\nType your business type.`);
+    res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
-  else if (user.step === 'waiting_for_business_type') {
+  
+  // Step 3: Waiting for business type
+  if (user.step === 'waiting_for_business_type') {
     await updateUser(userPhone, { business_type: incomingMsg, step: 'waiting_for_location' });
     twiml.message(`Where is your business located?\n\nExamples: Nairobi, Mombasa, Kisumu, Nakuru, etc.\n\nType your location.`);
+    res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
-  else if (user.step === 'waiting_for_location') {
-    await updateUser(userPhone, { location: incomingMsg, registered: 1, step: 'none' });
-    await recordNewSubscriber(userPhone, user.business_name, user.business_type, incomingMsg);
+  
+  // Step 4: Waiting for location - Complete registration (PERMANENT STORAGE)
+  if (user.step === 'waiting_for_location') {
+    // Update users table
+    await updateUser(userPhone, { 
+      location: incomingMsg, 
+      registered: 1, 
+      step: 'none'
+    });
     
-    twiml.message(`✅ *Registration Complete!* ✅\n\n🎉 Welcome to DukaApp, ${user.business_name}!\n\nBusiness: ${user.business_type}\nLocation: ${user.location}\n\n━━━━━━━━━━━━━━━━━━━━\n*📚 HOW TO USE DUKAAPP*\n━━━━━━━━━━━━━━━━━━━━\n\n💰 *SALE 1000* - Record a sale\n💸 *EXPENSE 500* - Record an expense\n💵 *CASH 1000* - Record a cash sale\n📊 *PROFIT* - View your profit\n📋 *STATUS* - Check your info\n\n📦 *STOCK MANAGEMENT*\n• stock [product]\n• addstock [product] [qty]\n• usestock [product] [qty]\n• liststock\n• lowstock\n\n💳 *SUBSCRIPTION*\nYou have a *14-day free trial*!\nAfter trial: KES 299/month\nReply *PAY NOW* to subscribe early\n\n🤖 *AUTO-RECORDING*\nJust forward your M-Pesa messages!\n• Received money → Auto-sale\n• Sent money → Auto-expense\n\nType *HELP* anytime to see all commands.\n\nThank you for choosing DukaApp! 🚀`);
+    // Get the updated user data
+    user = await getUser(userPhone);
+    
+    // CRITICAL: Record in subscribers table for permanent tracking
+    const now = new Date();
+    const trialEndDate = new Date();
+    trialEndDate.setDate(trialEndDate.getDate() + 14);
+    
+    // Check if subscriber already exists
+    const existingSubscriber = await db.get('SELECT * FROM subscribers WHERE phone = ?', userPhone);
+    
+    if (!existingSubscriber) {
+      await db.run(`
+        INSERT INTO subscribers (
+          phone, business_name, business_type, location, 
+          subscription_status, trial_start_date, trial_end_date,
+          status_history, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'trial', ?, ?, ?, ?, ?)
+      `, userPhone, user.business_name, user.business_type, incomingMsg, 
+         now.toISOString(), trialEndDate.toISOString(), 
+         JSON.stringify([{ status: 'trial', date: now.toISOString(), note: 'User registered' }]),
+         now.toISOString(), now.toISOString());
+      
+      // Also record in trial tracking
+      await db.run(`
+        INSERT INTO trial_tracking (phone, trial_start_date, trial_end_date, trial_status)
+        VALUES (?, ?, ?, 'active')
+      `, userPhone, now.toISOString(), trialEndDate.toISOString());
+      
+      console.log(`✅ Subscriber permanently recorded: ${userPhone} - ${user.business_name}`);
+    } else {
+      // Update existing subscriber
+      await db.run(`
+        UPDATE subscribers SET 
+          business_name = ?, business_type = ?, location = ?,
+          trial_start_date = ?, trial_end_date = ?, updated_at = ?
+        WHERE phone = ?
+      `, user.business_name, user.business_type, incomingMsg, 
+         now.toISOString(), trialEndDate.toISOString(), now.toISOString(), userPhone);
+      console.log(`✅ Subscriber updated: ${userPhone}`);
+    }
+    
+    const welcomeMsg = `✅ *Registration Complete!* ✅
+
+🎉 Welcome to DukaApp, ${user.business_name}!
+
+Business: ${user.business_type}
+Location: ${user.location}
+
+━━━━━━━━━━━━━━━━━━━━
+*📚 HOW TO USE DUKAAPP*
+━━━━━━━━━━━━━━━━━━━━
+
+💰 *SALE 1000* - Record a sale
+💸 *EXPENSE 500* - Record an expense
+💵 *CASH 1000* - Record a cash sale
+📊 *PROFIT* - View your profit
+📋 *STATUS* - Check your info
+
+📦 *STOCK MANAGEMENT*
+• stock [product] - Check stock
+• addstock [product] [qty] - Add stock
+• usestock [product] [qty] - Use stock
+• liststock - View all products
+• lowstock - Low stock alerts
+
+💳 *SUBSCRIPTION*
+You have a *14-day free trial*!
+After trial: KES 299/month
+Reply *PAY NOW* to subscribe early
+
+🤖 *AUTO-RECORDING*
+Just forward your M-Pesa messages!
+• Received money → Auto-sale
+• Sent money → Auto-expense
+
+Type *HELP* anytime to see all commands.
+
+Thank you for choosing DukaApp! 🚀`;
+    
+    twiml.message(welcomeMsg);
+    res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
-  else if (incomingMsg === 'start') {
+  
+  // START COMMAND - Begin registration
+  if (incomingMsg === 'start') {
     await updateUser(userPhone, { step: 'waiting_for_business_name' });
     twiml.message(`🎉 *Welcome to DukaApp!* 🎉\n\nLet's get your business registered.\n\n*Step 1 of 3:* What is your business name?\n\nType your business name (e.g., "Katungu General Store")`);
+    res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
-  else {
-    twiml.message(`👋 *Welcome to DukaApp!* 👋\n\nTrack sales, expenses, and profit on WhatsApp.\n\nTo begin your 14-day free trial, reply: *START*\n\nWe'll ask for your business name, type, and location.\n\nQuestions? Reply: SUPPORT`);
-  }
+  
+  // DEFAULT RESPONSE FOR UNREGISTERED USERS
+  twiml.message(`👋 *Welcome to DukaApp!* 👋\n\nTrack sales, expenses, and profit on WhatsApp.\n\nTo begin your 14-day free trial, reply: *START*\n\nWe'll ask for your business name, type, and location.\n\nQuestions? Reply: SUPPORT`);
   
   res.set('Content-Type', 'text/xml');
   res.send(twiml.toString());
@@ -867,7 +987,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Health check: /health`);
   console.log(`✅ WhatsApp webhook: /whatsapp`);
   console.log(`✅ Admin dashboard: /admin-dashboard (Password: Dallas123!)`);
-  console.log(`✅ Subscriber tracking enabled`);
+  console.log(`✅ Subscriber tracking enabled - PERMANENT REGISTRATION`);
   console.log(`✅ M-Pesa STK Push enabled`);
   console.log(`✅ Stock management enabled`);
 });
