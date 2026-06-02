@@ -49,8 +49,9 @@ app.post('/whatsapp', (req, res) => {
   res.send(twiml.toString());
 });
 
+// IMPORTANT: Bind to 0.0.0.0 for Railway
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ DukaApp running on port ${PORT}`);
   console.log(`✅ Health check: /health`);
 });
