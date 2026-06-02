@@ -1,8 +1,7 @@
-// server.js - Complete DukaApp Server with Stock Management
+// server.js - Complete DukaApp Server with Permanent Registration
 const express = require('express');
 const { MessagingResponse } = require('twilio').twiml;
 const path = require('path');
-const fs = require('fs');
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
 const app = express();
@@ -25,7 +24,7 @@ async function initDatabase() {
       business_name TEXT,
       business_type TEXT,
       location TEXT,
-      registered BOOLEAN DEFAULT 0,
+      registered INTEGER DEFAULT 0,
       step TEXT DEFAULT 'none',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -208,18 +207,23 @@ async function getLowStockProducts(phone) {
 }
 
 // ============================================================
-// USER MANAGEMENT FUNCTIONS
+// USER MANAGEMENT FUNCTIONS (PERSISTENT)
 // ============================================================
 
 async function getUser(phone) {
+  // Get user from database - this persists across messages
   let user = await db.get('SELECT * FROM users WHERE phone = ?', phone);
+  
   if (!user) {
+    // Create new user if doesn't exist
     await db.run(
       'INSERT INTO users (phone, step) VALUES (?, ?)',
       phone, 'none'
     );
     user = await db.get('SELECT * FROM users WHERE phone = ?', phone);
+    console.log(`🆕 Created new user: ${phone}`);
   }
+  
   return user;
 }
 
@@ -228,6 +232,7 @@ async function updateUser(phone, updates) {
   const values = Object.values(updates);
   const setClause = fields.map(f => `${f} = ?`).join(', ');
   await db.run(`UPDATE users SET ${setClause} WHERE phone = ?`, ...values, phone);
+  console.log(`📝 Updated user ${phone}:`, updates);
 }
 
 // ============================================================
@@ -241,40 +246,341 @@ app.post('/whatsapp', async (req, res) => {
   
   console.log(`📩 Message from ${userPhone}: "${incomingMsg}"`);
   
-  // Get user from database
+  // Get user from database (PERSISTENT)
   let user = await getUser(userPhone);
   
   // ============================================================
-  // REGISTRATION FLOW (if not registered)
+  // CHECK IF USER IS ALREADY REGISTERED
   // ============================================================
   
-  if (!user.registered) {
+  if (user.registered === 1) {
+    console.log(`✅ User already registered: ${user.business_name}`);
     
-    // Step 2: Waiting for business name
-    if (user.step === 'waiting_for_business_name') {
-      await updateUser(userPhone, { business_name: incomingMsg, step: 'waiting_for_business_type' });
-      twiml.message(`Great! What type of business do you run?\n\nExamples: Retail Shop, Grocery, Hardware, Restaurant, Salon, Boutique, etc.\n\nType your business type.`);
-      res.set('Content-Type', 'text/xml');
-      res.send(twiml.toString());
-      return;
+    // ============================================================
+    // REGISTERED USER COMMANDS
+    // ============================================================
+    
+    // HELP COMMAND
+    if (incomingMsg === 'help') {
+      twiml.message(`📖 *DUKAAPP COMMANDS*
+
+━━━━━━━━━━━━━━━━━━━━
+💰 *Sales & Expenses*
+━━━━━━━━━━━━━━━━━━━━
+• sale [amount] - Record M-Pesa sale
+• expense [amount] - Record M-Pesa expense
+• cash [amount] - Record cash sale
+
+━━━━━━━━━━━━━━━━━━━━
+📦 *Stock Management*
+━━━━━━━━━━━━━━━━━━━━
+• stock [product] - Check stock
+• addstock [product] [qty] - Add stock
+• usestock [product] [qty] - Use stock
+• liststock - View all products
+• lowstock - Low stock alerts
+
+━━━━━━━━━━━━━━━━━━━━
+📊 *Reports*
+━━━━━━━━━━━━━━━━━━━━
+• profit - Today's profit
+• status - Business info
+
+━━━━━━━━━━━━━━━━━━━━
+
+*Examples:*
+sale 1500
+addstock sugar 50
+stock sugar
+profit`);
     }
     
-    // Step 3: Waiting for business type
-    if (user.step === 'waiting_for_business_type') {
-      await updateUser(userPhone, { business_type: incomingMsg, step: 'waiting_for_location' });
-      twiml.message(`Where is your business located?\n\nExamples: Nairobi, Mombasa, Kisumu, Nakuru, etc.\n\nType your location.`);
-      res.set('Content-Type', 'text/xml');
-      res.send(twiml.toString());
-      return;
+    // STOCK COMMANDS
+    else if (incomingMsg.startsWith('stock')) {
+      const parts = incomingMsg.split(' ');
+      const productName = parts.slice(1).join(' ');
+      
+      if (!productName) {
+        const products = await listStockProducts(userPhone);
+        
+        if (products.length === 0) {
+          twiml.message(`📦 *No products in inventory*
+
+Add products with: addstock [product] [quantity]
+
+Example: addstock sugar 50`);
+        } else {
+          let stockList = `📦 *YOUR INVENTORY*\n\n`;
+          for (const p of products) {
+            const status = p.quantity <= p.reorder_level ? '⚠️ LOW' : '✅';
+            stockList += `${status} *${p.product_name}*: ${p.quantity} ${p.unit}\n`;
+          }
+          twiml.message(stockList);
+        }
+      } else {
+        const product = await getProductStock(userPhone, productName);
+        
+        if (!product) {
+          twiml.message(`❌ Product "${productName}" not found.
+
+Add it with: addstock ${productName} [quantity]`);
+        } else {
+          const status = product.quantity <= product.reorder_level ? '⚠️ LOW STOCK' : '✅ In stock';
+          twiml.message(`📦 *${product.product_name.toUpperCase()}*
+
+📊 Current stock: ${product.quantity} ${product.unit}
+Status: ${status}`);
+        }
+      }
     }
     
-    // Step 4: Waiting for location - Complete registration
-    if (user.step === 'waiting_for_location') {
-      await updateUser(userPhone, { location: incomingMsg, registered: true, step: 'none' });
+    // ADD STOCK COMMAND
+    else if (incomingMsg.startsWith('addstock')) {
+      const parts = incomingMsg.split(' ');
+      if (parts.length < 3) {
+        twiml.message(`📦 *Add Stock*
+
+Type: addstock [product] [quantity]
+
+Example: addstock sugar 50`);
+      } else {
+        const quantity = parseFloat(parts[parts.length - 1]);
+        const productName = parts.slice(1, -1).join(' ');
+        
+        if (isNaN(quantity) || quantity <= 0) {
+          twiml.message(`❌ Invalid quantity. Enter a valid number.`);
+        } else {
+          const result = await addStockProduct(userPhone, productName, quantity);
+          
+          if (result.success) {
+            if (result.isNew) {
+              twiml.message(`✅ *New product added!*
+
+📦 ${productName}: ${result.newQty} pcs`);
+            } else {
+              twiml.message(`✅ *Stock updated!*
+
+📦 ${productName}: ${result.oldQty} → ${result.newQty} pcs`);
+            }
+          }
+        }
+      }
+    }
+    
+    // USE STOCK COMMAND
+    else if (incomingMsg.startsWith('usestock')) {
+      const parts = incomingMsg.split(' ');
+      if (parts.length < 3) {
+        twiml.message(`📦 *Use Stock*
+
+Type: usestock [product] [quantity]
+
+Example: usestock sugar 5`);
+      } else {
+        const quantity = parseFloat(parts[parts.length - 1]);
+        const productName = parts.slice(1, -1).join(' ');
+        
+        if (isNaN(quantity) || quantity <= 0) {
+          twiml.message(`❌ Invalid quantity.`);
+        } else {
+          const result = await useStockProduct(userPhone, productName, quantity);
+          
+          if (result.success) {
+            twiml.message(`✅ *Stock used!*
+
+📦 ${result.product}: Used ${result.usedQty} pcs
+📊 Remaining: ${result.remainingQty} pcs`);
+          } else {
+            twiml.message(`❌ ${result.error}`);
+          }
+        }
+      }
+    }
+    
+    // LIST STOCK COMMAND
+    else if (incomingMsg === 'liststock') {
+      const products = await listStockProducts(userPhone);
       
-      user = await getUser(userPhone);
+      if (products.length === 0) {
+        twiml.message(`📦 *No products in inventory*
+
+Add products with: addstock [product] [quantity]`);
+      } else {
+        let stockList = `📦 *COMPLETE INVENTORY*\n\n`;
+        for (const p of products) {
+          stockList += `• *${p.product_name}*: ${p.quantity} ${p.unit}\n`;
+        }
+        stockList += `\nTotal: ${products.length} products`;
+        twiml.message(stockList);
+      }
+    }
+    
+    // LOW STOCK COMMAND
+    else if (incomingMsg === 'lowstock') {
+      const lowProducts = await getLowStockProducts(userPhone);
       
-      const welcomeMsg = `✅ *Registration Complete!* ✅
+      if (lowProducts.length === 0) {
+        twiml.message(`✅ *No low stock items*
+
+All products are well stocked.`);
+      } else {
+        let alertMsg = `⚠️ *LOW STOCK ALERT*\n\n`;
+        for (const p of lowProducts) {
+          alertMsg += `📦 ${p.product_name}: ${p.quantity} ${p.unit} left\n`;
+        }
+        alertMsg += `\nRestock with: addstock [product] [quantity]`;
+        twiml.message(alertMsg);
+      }
+    }
+    
+    // SALE COMMAND
+    else if (incomingMsg.startsWith('sale')) {
+      const amount = incomingMsg.split(' ')[1];
+      if (amount && !isNaN(amount)) {
+        await db.run(
+          `INSERT INTO transactions (phone, amount, type) VALUES (?, ?, 'sale')`,
+          userPhone, amount
+        );
+        twiml.message(`✅ *Sale Recorded!* KES ${amount}`);
+      } else {
+        twiml.message(`📊 *Record a Sale*
+
+Type: sale [amount]
+Example: sale 1500`);
+      }
+    }
+    
+    // EXPENSE COMMAND
+    else if (incomingMsg.startsWith('expense')) {
+      const amount = incomingMsg.split(' ')[1];
+      if (amount && !isNaN(amount)) {
+        await db.run(
+          `INSERT INTO transactions (phone, amount, type) VALUES (?, ?, 'expense')`,
+          userPhone, amount
+        );
+        twiml.message(`✅ *Expense Recorded!* KES ${amount}`);
+      } else {
+        twiml.message(`💸 *Record an Expense*
+
+Type: expense [amount]
+Example: expense 500`);
+      }
+    }
+    
+    // CASH COMMAND
+    else if (incomingMsg.startsWith('cash')) {
+      const amount = incomingMsg.split(' ')[1];
+      if (amount && !isNaN(amount)) {
+        await db.run(
+          `INSERT INTO transactions (phone, amount, type) VALUES (?, ?, 'cash_sale')`,
+          userPhone, amount
+        );
+        twiml.message(`✅ *Cash Sale Recorded!* KES ${amount}`);
+      } else {
+        twiml.message(`💵 *Record a Cash Sale*
+
+Type: cash [amount]
+Example: cash 1000`);
+      }
+    }
+    
+    // PROFIT COMMAND
+    else if (incomingMsg === 'profit') {
+      const today = new Date().toISOString().split('T')[0];
+      
+      const sales = await db.get(
+        `SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type IN ('sale', 'cash_sale') AND date = ?`,
+        userPhone, today
+      );
+      const expenses = await db.get(
+        `SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`,
+        userPhone, today
+      );
+      
+      const totalSales = sales?.total || 0;
+      const totalExpenses = expenses?.total || 0;
+      const profit = totalSales - totalExpenses;
+      
+      twiml.message(`📊 *TODAY'S PROFIT*
+
+💰 Sales: KES ${totalSales}
+💸 Expenses: KES ${totalExpenses}
+━━━━━━━━━━━━━━━━━━━━
+📈 PROFIT: KES ${profit}`);
+    }
+    
+    // STATUS COMMAND
+    else if (incomingMsg === 'status') {
+      const products = await listStockProducts(userPhone);
+      
+      twiml.message(`📋 *BUSINESS STATUS*
+
+🏪 Business: ${user.business_name}
+📂 Type: ${user.business_type}
+📍 Location: ${user.location}
+
+📦 Products in stock: ${products.length}
+
+Type "help" for all commands.`);
+    }
+    
+    // AGENT COMMAND
+    else if (incomingMsg === 'agent') {
+      twiml.message(`🤝 *Become a DukaApp Agent*
+
+• KES 200 per shop you sign up
+• 10% recurring commission
+
+Start here: https://dukaapp.online/agent-signup`);
+    }
+    
+    // DEFAULT RESPONSE
+    else {
+      twiml.message(`❌ Command not recognized.
+
+Type *help* to see all commands.
+
+Examples:
+• sale 1500
+• addstock sugar 50
+• profit`);
+    }
+    
+    res.set('Content-Type', 'text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+  
+  // ============================================================
+  // REGISTRATION FLOW (Only for NEW users)
+  // ============================================================
+  
+  // Step 2: Waiting for business name
+  if (user.step === 'waiting_for_business_name') {
+    await updateUser(userPhone, { business_name: incomingMsg, step: 'waiting_for_business_type' });
+    twiml.message(`Great! What type of business do you run?\n\nExamples: Retail Shop, Grocery, Hardware, Restaurant, Salon, Boutique, etc.\n\nType your business type.`);
+    res.set('Content-Type', 'text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+  
+  // Step 3: Waiting for business type
+  if (user.step === 'waiting_for_business_type') {
+    await updateUser(userPhone, { business_type: incomingMsg, step: 'waiting_for_location' });
+    twiml.message(`Where is your business located?\n\nExamples: Nairobi, Mombasa, Kisumu, Nakuru, etc.\n\nType your location.`);
+    res.set('Content-Type', 'text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+  
+  // Step 4: Waiting for location - Complete registration
+  if (user.step === 'waiting_for_location') {
+    await updateUser(userPhone, { location: incomingMsg, registered: 1, step: 'none' });
+    
+    // Get updated user
+    user = await getUser(userPhone);
+    
+    const welcomeMsg = `✅ *Registration Complete!* ✅
 
 🎉 Welcome to DukaApp, ${user.business_name}!
 
@@ -301,7 +607,7 @@ Location: ${user.location}
 • lowstock - Low stock alerts
 
 ━━━━━━━━━━━━━━━━━━━━
-*🤖 AUTO-RECORDING*
+🤖 *AUTO-RECORDING*
 ━━━━━━━━━━━━━━━━━━━━
 
 Just forward your M-Pesa messages!
@@ -315,30 +621,36 @@ You have a *14-day free trial*!
 Type *HELP* anytime to see all commands.
 
 Thank you for choosing DukaApp! 🚀`;
-      
-      twiml.message(welcomeMsg);
-      res.set('Content-Type', 'text/xml');
-      res.send(twiml.toString());
-      return;
-    }
     
-    // START command - Begin registration
-    if (incomingMsg === 'start') {
-      await updateUser(userPhone, { step: 'waiting_for_business_name' });
-      twiml.message(`🎉 *Welcome to DukaApp!* 🎉
+    twiml.message(welcomeMsg);
+    res.set('Content-Type', 'text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+  
+  // ============================================================
+  // START COMMAND - Begin registration
+  // ============================================================
+  
+  if (incomingMsg === 'start') {
+    await updateUser(userPhone, { step: 'waiting_for_business_name' });
+    twiml.message(`🎉 *Welcome to DukaApp!* 🎉
 
 Let's get your business registered.
 
 *Step 1 of 3:* What is your business name?
 
 Type your business name (e.g., "Katungu General Store")`);
-      res.set('Content-Type', 'text/xml');
-      res.send(twiml.toString());
-      return;
-    }
-    
-    // Default response for unregistered users
-    twiml.message(`👋 *Welcome to DukaApp!* 👋
+    res.set('Content-Type', 'text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+  
+  // ============================================================
+  // DEFAULT RESPONSE FOR UNREGISTERED USERS
+  // ============================================================
+  
+  twiml.message(`👋 *Welcome to DukaApp!* 👋
 
 Track sales, expenses, and profit on WhatsApp.
 
@@ -347,397 +659,6 @@ To begin your 14-day free trial, reply: *START*
 We'll ask for your business name, type, and location.
 
 Questions? Reply: SUPPORT`);
-    res.set('Content-Type', 'text/xml');
-    res.send(twiml.toString());
-    return;
-  }
-  
-  // ============================================================
-  // REGISTERED USER COMMANDS
-  // ============================================================
-  
-  // ============================================================
-  // HELP COMMAND
-  // ============================================================
-  
-  if (incomingMsg === 'help') {
-    twiml.message(`📖 *DUKAAPP COMMANDS*
-
-━━━━━━━━━━━━━━━━━━━━
-💰 *Sales & Expenses*
-━━━━━━━━━━━━━━━━━━━━
-• sale [amount] - Record M-Pesa sale
-• expense [amount] - Record M-Pesa expense
-• cash [amount] - Record cash sale
-• cashexpense [amount] - Record cash expense
-
-━━━━━━━━━━━━━━━━━━━━
-📦 *Stock Management* 🆕
-━━━━━━━━━━━━━━━━━━━━
-• stock [product] - Check stock levels
-• addstock [product] [qty] - Add to inventory
-• usestock [product] [qty] - Reduce when sold
-• liststock - Show all inventory
-• lowstock - Show items needing reorder
-
-━━━━━━━━━━━━━━━━━━━━
-📊 *Reports*
-━━━━━━━━━━━━━━━━━━━━
-• profit - Today's profit
-• status - Business info
-
-━━━━━━━━━━━━━━━━━━━━
-🤝 *Agent Program*
-━━━━━━━━━━━━━━━━━━━━
-• agent - Join agent program
-
-━━━━━━━━━━━━━━━━━━━━
-
-*Stock examples:*
-addstock sugar 50
-usestock sugar 5
-stock sugar
-liststock
-lowstock`);
-  }
-  
-  // ============================================================
-  // STOCK MANAGEMENT COMMANDS
-  // ============================================================
-  
-  // CHECK STOCK - "stock sugar" or "stock"
-  else if (incomingMsg.startsWith('stock')) {
-    const parts = incomingMsg.split(' ');
-    const productName = parts.slice(1).join(' ');
-    
-    if (!productName) {
-      const products = await listStockProducts(userPhone);
-      
-      if (products.length === 0) {
-        twiml.message(`📦 *No products in inventory*
-
-Add products with: addstock [product] [quantity]
-
-Example: addstock sugar 50`);
-      } else {
-        let stockList = `📦 *YOUR INVENTORY*\n\n`;
-        for (const p of products) {
-          const status = p.quantity <= p.reorder_level ? '⚠️ LOW' : '✅';
-          stockList += `${status} *${p.product_name}*: ${p.quantity} ${p.unit}\n`;
-        }
-        twiml.message(stockList);
-      }
-    } else {
-      const product = await getProductStock(userPhone, productName);
-      
-      if (!product) {
-        twiml.message(`❌ Product "${productName}" not found in inventory.
-
-Add it with: addstock ${productName} [quantity]
-
-Example: addstock ${productName} 20`);
-      } else {
-        const status = product.quantity <= product.reorder_level ? '⚠️ LOW STOCK - Reorder soon!' : '✅ In stock';
-        twiml.message(`📦 *${product.product_name.toUpperCase()}*
-
-📊 Current stock: ${product.quantity} ${product.unit}
-📉 Reorder at: ${product.reorder_level} ${product.unit}
-Status: ${status}`);
-      }
-    }
-  }
-  
-  // ADD STOCK - "addstock sugar 50"
-  else if (incomingMsg.startsWith('addstock')) {
-    const parts = incomingMsg.split(' ');
-    if (parts.length < 3) {
-      twiml.message(`📦 *Add Stock*
-
-Type: addstock [product name] [quantity]
-
-Example: addstock sugar 50
-
-Optional: addstock sugar 50 kg`);
-    } else {
-      const quantity = parseFloat(parts[parts.length - 1]);
-      const productName = parts.slice(1, -1).join(' ');
-      
-      if (isNaN(quantity) || quantity <= 0) {
-        twiml.message(`❌ Invalid quantity. Please enter a valid number.
-
-Example: addstock sugar 50`);
-      } else {
-        const result = await addStockProduct(userPhone, productName, quantity);
-        
-        if (result.success) {
-          if (result.isNew) {
-            twiml.message(`✅ *New product added!*
-
-📦 ${productName}: ${result.newQty} pcs
-
-Type "liststock" to see all inventory.`);
-          } else {
-            twiml.message(`✅ *Stock updated!*
-
-📦 ${productName}: ${result.oldQty} → ${result.newQty} pcs
-
-Type "stock ${productName}" for details.`);
-          }
-        } else {
-          twiml.message(`❌ Error: ${result.error}`);
-        }
-      }
-    }
-  }
-  
-  // USE STOCK - "usestock sugar 5"
-  else if (incomingMsg.startsWith('usestock')) {
-    const parts = incomingMsg.split(' ');
-    if (parts.length < 3) {
-      twiml.message(`📦 *Use Stock*
-
-When you sell a product, reduce your inventory:
-
-Type: usestock [product] [quantity]
-
-Example: usestock sugar 5`);
-    } else {
-      const quantity = parseFloat(parts[parts.length - 1]);
-      const productName = parts.slice(1, -1).join(' ');
-      
-      if (isNaN(quantity) || quantity <= 0) {
-        twiml.message(`❌ Invalid quantity. Please enter a valid number.
-
-Example: usestock sugar 5`);
-      } else {
-        const result = await useStockProduct(userPhone, productName, quantity);
-        
-        if (result.success) {
-          twiml.message(`✅ *Stock used!*
-
-📦 ${result.product}: Used ${result.usedQty} pcs
-📊 Remaining: ${result.remainingQty} pcs
-
-Type "stock ${result.product}" to check again.`);
-        } else {
-          twiml.message(`❌ ${result.error}`);
-        }
-      }
-    }
-  }
-  
-  // LIST ALL STOCK - "liststock"
-  else if (incomingMsg === 'liststock') {
-    const products = await listStockProducts(userPhone);
-    
-    if (products.length === 0) {
-      twiml.message(`📦 *No products in inventory*
-
-Add products with: addstock [product] [quantity]
-
-Example: addstock sugar 50`);
-    } else {
-      let stockList = `📦 *COMPLETE INVENTORY*\n\n`;
-      for (const p of products) {
-        const status = p.quantity <= p.reorder_level ? '⚠️' : '✅';
-        stockList += `${status} *${p.product_name}*: ${p.quantity} ${p.unit}\n`;
-      }
-      stockList += `\nTotal products: ${products.length}\n\nType "stock [product]" for details.`;
-      twiml.message(stockList);
-    }
-  }
-  
-  // LOW STOCK ALERT - "lowstock"
-  else if (incomingMsg === 'lowstock') {
-    const lowProducts = await getLowStockProducts(userPhone);
-    
-    if (lowProducts.length === 0) {
-      twiml.message(`✅ *No low stock items*
-
-All products are above reorder levels.
-
-Type "liststock" to see full inventory.`);
-    } else {
-      let alertMsg = `⚠️ *LOW STOCK ALERT* ⚠️\n\nThese products need reordering:\n\n`;
-      for (const p of lowProducts) {
-        alertMsg += `📦 *${p.product_name}*: ${p.quantity} ${p.unit} left\n`;
-        alertMsg += `   Reorder at: ${p.reorder_level} ${p.unit}\n\n`;
-      }
-      alertMsg += `Type "addstock [product] [quantity]" to restock.`;
-      twiml.message(alertMsg);
-    }
-  }
-  
-  // ============================================================
-  // SALES AND EXPENSES COMMANDS
-  // ============================================================
-  
-  // SALE COMMAND
-  else if (incomingMsg.startsWith('sale')) {
-    const amount = incomingMsg.split(' ')[1];
-    if (amount && !isNaN(amount)) {
-      await db.run(
-        `INSERT INTO transactions (phone, amount, type, description) VALUES (?, ?, 'sale', ?)`,
-        userPhone, amount, incomingMsg
-      );
-      twiml.message(`✅ *Sale Recorded!*
-
-M-Pesa Sale: KES ${amount}
-
-Send "profit" to see today's total.`);
-    } else {
-      twiml.message(`📊 *Record a Sale*
-
-Type: sale [amount]
-Example: sale 1500`);
-    }
-  }
-  
-  // EXPENSE COMMAND
-  else if (incomingMsg.startsWith('expense')) {
-    const parts = incomingMsg.split(' ');
-    const amount = parts[1];
-    if (amount && !isNaN(amount)) {
-      await db.run(
-        `INSERT INTO transactions (phone, amount, type, category, description) VALUES (?, ?, 'expense', ?, ?)`,
-        userPhone, amount, parts[2] || 'general', incomingMsg
-      );
-      twiml.message(`✅ *Expense Recorded!*
-
-M-Pesa Expense: KES ${amount}
-
-Send "profit" to see today's total.`);
-    } else {
-      twiml.message(`💸 *Record an Expense*
-
-Type: expense [amount]
-Example: expense 500`);
-    }
-  }
-  
-  // CASH SALE COMMAND
-  else if (incomingMsg.startsWith('cash')) {
-    const amount = incomingMsg.split(' ')[1];
-    if (amount && !isNaN(amount)) {
-      await db.run(
-        `INSERT INTO transactions (phone, amount, type, description) VALUES (?, ?, 'cash_sale', ?)`,
-        userPhone, amount, incomingMsg
-      );
-      twiml.message(`✅ *Cash Sale Recorded!*
-
-Cash Sale: KES ${amount}
-
-Send "profit" to see today's total.`);
-    } else {
-      twiml.message(`💵 *Record a Cash Sale*
-
-Type: cash [amount]
-Example: cash 1000`);
-    }
-  }
-  
-  // PROFIT COMMAND
-  else if (incomingMsg === 'profit') {
-    const today = new Date().toISOString().split('T')[0];
-    
-    const sales = await db.get(
-      `SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type IN ('sale', 'cash_sale') AND date = ?`,
-      userPhone, today
-    );
-    const expenses = await db.get(
-      `SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`,
-      userPhone, today
-    );
-    
-    const totalSales = sales?.total || 0;
-    const totalExpenses = expenses?.total || 0;
-    const profit = totalSales - totalExpenses;
-    
-    twiml.message(`📊 *TODAY'S PROFIT* (${today})
-
-💰 Sales: KES ${totalSales}
-💸 Expenses: KES ${totalExpenses}
-━━━━━━━━━━━━━━━━━━━━
-📈 PROFIT: KES ${profit}
-
-${profit >= 0 ? '🎉 Great work! Keep it up!' : '💔 Try to reduce expenses'}
-
-Type "status" for business info.`);
-  }
-  
-  // STATUS COMMAND
-  else if (incomingMsg === 'status') {
-    const today = new Date().toISOString().split('T')[0];
-    
-    const sales = await db.get(
-      `SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type IN ('sale', 'cash_sale') AND date = ?`,
-      userPhone, today
-    );
-    const expenses = await db.get(
-      `SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`,
-      userPhone, today
-    );
-    
-    const totalSales = sales?.total || 0;
-    const totalExpenses = expenses?.total || 0;
-    const profit = totalSales - totalExpenses;
-    
-    const products = await listStockProducts(userPhone);
-    
-    twiml.message(`📋 *BUSINESS STATUS*
-
-🏪 Business: ${user.business_name}
-📂 Type: ${user.business_type}
-📍 Location: ${user.location}
-
-━━━━━━━━━━━━━━━━━━━━
-💰 *TODAY'S FINANCIALS*
-━━━━━━━━━━━━━━━━━━━━
-Sales: KES ${totalSales}
-Expenses: KES ${totalExpenses}
-Profit: KES ${profit}
-
-━━━━━━━━━━━━━━━━━━━━
-📦 *INVENTORY*
-━━━━━━━━━━━━━━━━━━━━
-Products in stock: ${products.length}
-
-Type "liststock" to see all items.
-
-━━━━━━━━━━━━━━━━━━━━
-🎟️ *14-day free trial active!*
-
-Type "help" for all commands.`);
-  }
-  
-  // AGENT COMMAND
-  else if (incomingMsg === 'agent') {
-    twiml.message(`🤝 *Become a DukaApp Agent*
-
-• KES 200 per shop you sign up
-• 10% recurring commission for 3 months
-
-Sign up here: https://dukaapp.online/agent-signup
-
-Already an agent? Visit:
-https://dukaapp.online/dashboard`);
-  }
-  
-  // DEFAULT RESPONSE
-  else {
-    twiml.message(`❌ *Command not recognized*
-
-"${req.body.Body}" is not a valid command.
-
-Type *HELP* to see all available commands.
-
-Quick examples:
-• sale 1500
-• expense 500
-• addstock sugar 50
-• liststock
-• lowstock`);
-  }
   
   res.set('Content-Type', 'text/xml');
   res.send(twiml.toString());
@@ -878,4 +799,5 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Health check: /health`);
   console.log(`✅ WhatsApp webhook: /whatsapp`);
   console.log(`✅ Stock management commands enabled`);
+  console.log(`✅ Permanent user registration enabled`);
 });
