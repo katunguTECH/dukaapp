@@ -1,17 +1,18 @@
 {
   "name": "dukaapp",
-  "version": "1.0.0",
-  "description": "DukaApp - WhatsApp Business Profit Tracker",
+  "version": "2.0.0",
+  "description": "DukaApp - WhatsApp Business Profit Tracker with M-Pesa Payments",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "nodemon server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "twilio": "^4.19.0",
     "sqlite3": "^5.1.6",
-    "sqlite": "^5.1.1"
+    "sqlite": "^5.1.1",
+    "axios": "^1.6.0"
   },
   "engines": {
     "node": ">=18.0.0"

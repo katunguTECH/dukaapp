@@ -1,10 +1,139 @@
-// server.js - Complete DukaApp Server with Permanent Registration
+// server.js - Complete DukaApp Server with M-Pesa STK Push
 const express = require('express');
 const { MessagingResponse } = require('twilio').twiml;
 const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
 const { open } = require('sqlite');
+const axios = require('axios');
+const crypto = require('crypto');
 const app = express();
+
+// ============================================================
+// M-PESA DARAJA API CONFIGURATION (YOUR CREDENTIALS)
+// ============================================================
+
+const MPESA_CONFIG = {
+  consumerKey: "4L1I9rLFAU0Xv3d3RvFcEopc8e1VNILirvDhUkeBZBp3nx60",
+  consumerSecret: "6mkKjD05Afqxl16tg5gRFG7p5f6tpfJzmbQVJyrGtetomny7lrpWJ7eEh5ekwcgY",
+  passkey: "bfb279f9aa9bdbcf158e97dd71a467cd2e0c893059b10f78e6b72ada1ed2c919",
+  shortcode: "174379",
+  environment: "sandbox",
+  callbackUrl: "https://dukaapp.online/mpesa-callback"
+};
+
+const MPESA_API_BASE = MPESA_CONFIG.environment === "sandbox" 
+  ? "https://sandbox.safaricom.co.ke" 
+  : "https://api.safaricom.co.ke";
+
+// Store pending payments in memory (for callback matching)
+const pendingPayments = {};
+
+// ============================================================
+// M-PESA HELPER FUNCTIONS
+// ============================================================
+
+async function getMpesaAccessToken() {
+  const auth = Buffer.from(`${MPESA_CONFIG.consumerKey}:${MPESA_CONFIG.consumerSecret}`).toString('base64');
+  
+  try {
+    const response = await axios.get(
+      `${MPESA_API_BASE}/oauth/v1/generate?grant_type=client_credentials`,
+      {
+        headers: {
+          Authorization: `Basic ${auth}`
+        }
+      }
+    );
+    console.log('✅ M-Pesa access token obtained');
+    return response.data.access_token;
+  } catch (error) {
+    console.error('❌ Error getting M-Pesa token:', error.response?.data || error.message);
+    return null;
+  }
+}
+
+function generateMpesaPassword() {
+  const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const password = Buffer.from(
+    `${MPESA_CONFIG.shortcode}${MPESA_CONFIG.passkey}${timestamp}`
+  ).toString('base64');
+  return { password, timestamp };
+}
+
+function formatPhoneForMpesa(phoneNumber) {
+  // Remove whatsapp: prefix if present
+  let phone = phoneNumber.replace('whatsapp:', '').replace(/\+/g, '');
+  // Remove any non-digit characters
+  phone = phone.replace(/\D/g, '');
+  
+  // Convert to 254 format
+  if (phone.startsWith('0')) {
+    phone = '254' + phone.substring(1);
+  } else if (phone.startsWith('7')) {
+    phone = '254' + phone;
+  } else if (phone.startsWith('1')) {
+    phone = '254' + phone;
+  }
+  
+  return phone;
+}
+
+async function initiateSTKPush(phoneNumber, amount, accountReference, transactionDesc) {
+  const accessToken = await getMpesaAccessToken();
+  if (!accessToken) {
+    return { success: false, error: "Failed to get access token" };
+  }
+  
+  const { password, timestamp } = generateMpesaPassword();
+  const formattedPhone = formatPhoneForMpesa(phoneNumber);
+  
+  console.log(`📱 Initiating STK Push to ${formattedPhone} for KES ${amount}`);
+  
+  const data = {
+    BusinessShortCode: MPESA_CONFIG.shortcode,
+    Password: password,
+    Timestamp: timestamp,
+    TransactionType: "CustomerPayBillOnline",
+    Amount: Math.round(amount),
+    PartyA: formattedPhone,
+    PartyB: MPESA_CONFIG.shortcode,
+    PhoneNumber: formattedPhone,
+    CallBackURL: MPESA_CONFIG.callbackUrl,
+    AccountReference: accountReference.substring(0, 12),
+    TransactionDesc: transactionDesc.substring(0, 13)
+  };
+  
+  try {
+    const response = await axios.post(
+      `${MPESA_API_BASE}/mpesa/stkpush/v1/processrequest`,
+      data,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    console.log('STK Push response:', response.data);
+    
+    if (response.data.ResponseCode === '0') {
+      return { 
+        success: true, 
+        checkoutRequestId: response.data.CheckoutRequestID,
+        message: "STK Push sent successfully"
+      };
+    } else {
+      return { 
+        success: false, 
+        error: response.data.ResponseDescription || "STK Push failed"
+      };
+    }
+  } catch (error) {
+    console.error('STK Push error:', error.response?.data || error.message);
+    return { success: false, error: error.message };
+  }
+}
 
 // ============================================================
 // DATABASE SETUP
@@ -26,6 +155,10 @@ async function initDatabase() {
       location TEXT,
       registered INTEGER DEFAULT 0,
       step TEXT DEFAULT 'none',
+      trial_start_date DATETIME,
+      trial_end_date DATETIME,
+      subscription_status TEXT DEFAULT 'trial',
+      subscription_end_date DATETIME,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     
@@ -40,6 +173,16 @@ async function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     
+    CREATE TABLE IF NOT EXISTS payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      phone TEXT,
+      amount REAL,
+      checkout_request_id TEXT,
+      mpesa_receipt TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+    
     CREATE TABLE IF NOT EXISTS stock_products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -47,8 +190,6 @@ async function initDatabase() {
       quantity REAL DEFAULT 0,
       unit TEXT DEFAULT 'pcs',
       reorder_level REAL DEFAULT 0,
-      buying_price REAL DEFAULT 0,
-      selling_price REAL DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(phone, product_name)
@@ -68,11 +209,89 @@ async function initDatabase() {
     );
   `);
   console.log('✅ Database ready');
+  
+  // Run initial subscription check
+  await checkExpiredTrials();
 }
 
 initDatabase();
 
-// Middleware
+// ============================================================
+// SUBSCRIPTION MANAGEMENT FUNCTIONS
+// ============================================================
+
+async function checkExpiredTrials() {
+  const now = new Date().toISOString();
+  const expiredUsers = await db.all(
+    `SELECT * FROM users 
+     WHERE subscription_status = 'trial' 
+     AND trial_end_date <= ?`,
+    now
+  );
+  
+  for (const user of expiredUsers) {
+    await db.run(
+      `UPDATE users SET subscription_status = 'expired' WHERE phone = ?`,
+      user.phone
+    );
+    console.log(`⚠️ Trial expired for ${user.phone}`);
+  }
+}
+
+async function activateSubscription(phone, paymentAmount, mpesaReceipt, checkoutRequestId) {
+  const subscriptionEndDate = new Date();
+  subscriptionEndDate.setDate(subscriptionEndDate.getDate() + 30);
+  
+  await db.run(
+    `UPDATE users SET 
+      subscription_status = 'active',
+      subscription_end_date = ?,
+      trial_start_date = NULL,
+      trial_end_date = NULL
+     WHERE phone = ?`,
+    subscriptionEndDate.toISOString(), phone
+  );
+  
+  await db.run(
+    `UPDATE payments 
+     SET status = 'completed', mpesa_receipt = ? 
+     WHERE checkout_request_id = ?`,
+    mpesaReceipt, checkoutRequestId
+  );
+  
+  console.log(`✅ Subscription activated for ${phone} until ${subscriptionEndDate.toISOString()}`);
+}
+
+async function getSubscriptionStatus(phone) {
+  const user = await db.get(
+    `SELECT subscription_status, trial_end_date, subscription_end_date 
+     FROM users WHERE phone = ?`,
+    phone
+  );
+  
+  if (!user) return { status: 'no_account' };
+  
+  if (user.subscription_status === 'trial' && user.trial_end_date) {
+    const daysLeft = Math.ceil((new Date(user.trial_end_date) - new Date()) / (1000 * 60 * 60 * 24));
+    return { status: 'trial', daysLeft: Math.max(0, daysLeft), endDate: user.trial_end_date };
+  }
+  
+  if (user.subscription_status === 'active' && user.subscription_end_date) {
+    const daysLeft = Math.ceil((new Date(user.subscription_end_date) - new Date()) / (1000 * 60 * 60 * 24));
+    return { status: 'active', daysLeft: Math.max(0, daysLeft), endDate: user.subscription_end_date };
+  }
+  
+  if (user.subscription_status === 'expired') {
+    return { status: 'expired' };
+  }
+  
+  return { status: 'unknown' };
+}
+
+// ============================================================
+// MIDDLEWARE
+// ============================================================
+
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 app.use(express.static('.'));
@@ -98,6 +317,64 @@ app.get('/status', (req, res) => {
 
 app.get('/test', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Server is running' });
+});
+
+// ============================================================
+// M-PESA CALLBACK ENDPOINT
+// ============================================================
+
+app.post('/mpesa-callback', async (req, res) => {
+  console.log('📞 M-Pesa callback received');
+  
+  try {
+    const { Body } = req.body;
+    const stkCallback = Body?.stkCallback;
+    
+    if (stkCallback) {
+      const checkoutRequestId = stkCallback.CheckoutRequestID;
+      const resultCode = stkCallback.ResultCode;
+      const resultDesc = stkCallback.ResultDesc;
+      
+      console.log(`Callback: CheckoutID=${checkoutRequestId}, ResultCode=${resultCode}, ResultDesc=${resultDesc}`);
+      
+      if (resultCode === 0) {
+        // Payment successful
+        const mpesaReceipt = stkCallback.CallbackMetadata?.Item?.find(i => i.Name === 'MpesaReceiptNumber')?.Value;
+        const amount = stkCallback.CallbackMetadata?.Item?.find(i => i.Name === 'Amount')?.Value;
+        
+        // Find the payment record
+        const payment = await db.get(
+          'SELECT * FROM payments WHERE checkout_request_id = ? AND status = "pending"',
+          checkoutRequestId
+        );
+        
+        if (payment) {
+          await activateSubscription(payment.phone, amount, mpesaReceipt, checkoutRequestId);
+          console.log(`✅ Payment confirmed for ${payment.phone}: KES ${amount}, Receipt: ${mpesaReceipt}`);
+        } else {
+          // Check in-memory pending payments
+          if (pendingPayments[checkoutRequestId]) {
+            const { phone } = pendingPayments[checkoutRequestId];
+            await activateSubscription(phone, amount, mpesaReceipt, checkoutRequestId);
+            delete pendingPayments[checkoutRequestId];
+            console.log(`✅ Payment confirmed from memory for ${phone}`);
+          }
+        }
+      } else {
+        // Payment failed
+        console.log(`❌ Payment failed: ${resultDesc}`);
+        await db.run(
+          `UPDATE payments SET status = 'failed' WHERE checkout_request_id = ?`,
+          checkoutRequestId
+        );
+      }
+    }
+    
+    res.json({ ResultCode: 0, ResultDesc: "Success" });
+  } catch (error) {
+    console.error('Callback error:', error);
+    res.json({ ResultCode: 1, ResultDesc: "Error" });
+  }
 });
 
 // ============================================================
@@ -207,18 +484,20 @@ async function getLowStockProducts(phone) {
 }
 
 // ============================================================
-// USER MANAGEMENT FUNCTIONS (PERSISTENT)
+// USER MANAGEMENT FUNCTIONS
 // ============================================================
 
 async function getUser(phone) {
-  // Get user from database - this persists across messages
   let user = await db.get('SELECT * FROM users WHERE phone = ?', phone);
   
   if (!user) {
-    // Create new user if doesn't exist
+    const trialEndDate = new Date();
+    trialEndDate.setDate(trialEndDate.getDate() + 14);
+    
     await db.run(
-      'INSERT INTO users (phone, step) VALUES (?, ?)',
-      phone, 'none'
+      `INSERT INTO users (phone, step, trial_start_date, trial_end_date, subscription_status) 
+       VALUES (?, ?, ?, ?, 'trial')`,
+      phone, 'none', new Date().toISOString(), trialEndDate.toISOString()
     );
     user = await db.get('SELECT * FROM users WHERE phone = ?', phone);
     console.log(`🆕 Created new user: ${phone}`);
@@ -246,23 +525,101 @@ app.post('/whatsapp', async (req, res) => {
   
   console.log(`📩 Message from ${userPhone}: "${incomingMsg}"`);
   
-  // Get user from database (PERSISTENT)
+  // Get user from database
   let user = await getUser(userPhone);
   
+  // Check subscription status
+  const subscription = await getSubscriptionStatus(userPhone);
+  
+  // If subscription is expired, restrict commands (except PAY NOW)
+  if (subscription.status === 'expired' && !['pay now', 'pay', 'start'].includes(incomingMsg)) {
+    twiml.message(`⚠️ *Subscription Expired*
+
+Your 14-day free trial has ended.
+
+Please pay KES 299 to continue using DukaApp.
+
+Reply *PAY NOW* to make payment via M-Pesa STK Push.`);
+    res.set('Content-Type', 'text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+  
   // ============================================================
-  // CHECK IF USER IS ALREADY REGISTERED
+  // PAY NOW COMMAND - Initiate STK Push
+  // ============================================================
+  
+  if (incomingMsg === 'pay now' || incomingMsg === 'pay') {
+    // Check if already subscribed
+    if (subscription.status === 'active') {
+      const endDate = new Date(subscription.endDate).toLocaleDateString();
+      twiml.message(`✅ *Subscription Active*
+
+Your subscription is active until ${endDate}.
+
+No payment needed at this time.`);
+      res.set('Content-Type', 'text/xml');
+      res.send(twiml.toString());
+      return;
+    }
+    
+    twiml.message(`💰 *Processing Payment*
+
+Please wait while we initiate your M-Pesa STK Push.
+
+💳 Amount: KES 299
+🏪 Service: DukaApp Subscription
+
+You will receive a popup on your phone shortly.
+
+Enter your PIN to complete payment.`);
+    
+    // Initiate STK Push
+    const result = await initiateSTKPush(
+      userPhone, 
+      299, 
+      `DukaApp_${userPhone.slice(-8)}`, 
+      'DukaApp Subscription'
+    );
+    
+    if (result.success) {
+      // Store pending payment
+      await db.run(
+        `INSERT INTO payments (phone, amount, checkout_request_id, status)
+         VALUES (?, ?, ?, 'pending')`,
+        userPhone, 299, result.checkoutRequestId
+      );
+      // Also store in memory for quick callback matching
+      pendingPayments[result.checkoutRequestId] = { phone: userPhone, amount: 299 };
+      console.log(`💰 STK Push initiated for ${userPhone}, CheckoutID: ${result.checkoutRequestId}`);
+    } else {
+      console.error(`❌ STK Push failed for ${userPhone}: ${result.error}`);
+    }
+    
+    res.set('Content-Type', 'text/xml');
+    res.send(twiml.toString());
+    return;
+  }
+  
+  // ============================================================
+  // REGISTERED USER COMMANDS
   // ============================================================
   
   if (user.registered === 1) {
     console.log(`✅ User already registered: ${user.business_name}`);
     
-    // ============================================================
-    // REGISTERED USER COMMANDS
-    // ============================================================
-    
     // HELP COMMAND
     if (incomingMsg === 'help') {
-      twiml.message(`📖 *DUKAAPP COMMANDS*
+      let subscriptionInfo = '';
+      if (subscription.status === 'trial') {
+        subscriptionInfo = `\n🎟️ *Trial: ${subscription.daysLeft} days remaining*`;
+      } else if (subscription.status === 'active') {
+        subscriptionInfo = `\n✅ *Active: ${subscription.daysLeft} days remaining*`;
+      } else if (subscription.status === 'expired') {
+        subscriptionInfo = `\n⚠️ *Expired - Send PAY NOW to renew*`;
+      }
+      
+      twiml.message(`📖 *DUKAAPP COMMANDS*${subscriptionInfo}
 
 ━━━━━━━━━━━━━━━━━━━━
 💰 *Sales & Expenses*
@@ -287,12 +644,44 @@ app.post('/whatsapp', async (req, res) => {
 • status - Business info
 
 ━━━━━━━━━━━━━━━━━━━━
+💳 *Subscription*
+━━━━━━━━━━━━━━━━━━━━
+• pay now - Pay KES 299 via M-Pesa
+
+━━━━━━━━━━━━━━━━━━━━
 
 *Examples:*
 sale 1500
 addstock sugar 50
-stock sugar
-profit`);
+profit
+pay now`);
+    }
+    
+    // STATUS COMMAND
+    else if (incomingMsg === 'status') {
+      const products = await listStockProducts(userPhone);
+      let subscriptionInfo = '';
+      
+      if (subscription.status === 'trial') {
+        subscriptionInfo = `🎟️ *Free Trial: ${subscription.daysLeft} days remaining*`;
+      } else if (subscription.status === 'active') {
+        subscriptionInfo = `✅ *Subscription Active: ${subscription.daysLeft} days remaining*`;
+      } else if (subscription.status === 'expired') {
+        subscriptionInfo = `⚠️ *Subscription Expired - Send PAY NOW to renew*`;
+      }
+      
+      twiml.message(`📋 *BUSINESS STATUS*
+
+🏪 Business: ${user.business_name}
+📂 Type: ${user.business_type}
+📍 Location: ${user.location}
+
+━━━━━━━━━━━━━━━━━━━━
+${subscriptionInfo}
+━━━━━━━━━━━━━━━━━━━━
+📦 Products in stock: ${products.length}
+
+Type "help" for all commands.`);
     }
     
     // STOCK COMMANDS
@@ -509,21 +898,6 @@ Example: cash 1000`);
 📈 PROFIT: KES ${profit}`);
     }
     
-    // STATUS COMMAND
-    else if (incomingMsg === 'status') {
-      const products = await listStockProducts(userPhone);
-      
-      twiml.message(`📋 *BUSINESS STATUS*
-
-🏪 Business: ${user.business_name}
-📂 Type: ${user.business_type}
-📍 Location: ${user.location}
-
-📦 Products in stock: ${products.length}
-
-Type "help" for all commands.`);
-    }
-    
     // AGENT COMMAND
     else if (incomingMsg === 'agent') {
       twiml.message(`🤝 *Become a DukaApp Agent*
@@ -543,7 +917,8 @@ Type *help* to see all commands.
 Examples:
 • sale 1500
 • addstock sugar 50
-• profit`);
+• profit
+• pay now`);
     }
     
     res.set('Content-Type', 'text/xml');
@@ -577,7 +952,6 @@ Examples:
   if (user.step === 'waiting_for_location') {
     await updateUser(userPhone, { location: incomingMsg, registered: 1, step: 'none' });
     
-    // Get updated user
     user = await getUser(userPhone);
     
     const welcomeMsg = `✅ *Registration Complete!* ✅
@@ -607,6 +981,14 @@ Location: ${user.location}
 • lowstock - Low stock alerts
 
 ━━━━━━━━━━━━━━━━━━━━
+💳 *SUBSCRIPTION*
+━━━━━━━━━━━━━━━━━━━━
+You have a *14-day free trial*!
+
+After trial: KES 299/month
+Reply *PAY NOW* to subscribe early
+
+━━━━━━━━━━━━━━━━━━━━
 🤖 *AUTO-RECORDING*
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -615,8 +997,6 @@ Just forward your M-Pesa messages!
 • Sent money → Auto-expense
 
 ━━━━━━━━━━━━━━━━━━━━
-
-You have a *14-day free trial*!
 
 Type *HELP* anytime to see all commands.
 
@@ -790,6 +1170,37 @@ app.get('/dashboard', (req, res) => {
 });
 
 // ============================================================
+// DAILY SUBSCRIPTION CHECK (Run every hour)
+// ============================================================
+
+async function dailySubscriptionCheck() {
+  console.log('🔄 Running subscription check...');
+  
+  // Check for trials expiring tomorrow
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().slice(0, 19);
+  
+  const expiringTrials = await db.all(
+    `SELECT * FROM users 
+     WHERE subscription_status = 'trial' 
+     AND trial_end_date <= ?`,
+    tomorrowStr
+  );
+  
+  for (const user of expiringTrials) {
+    console.log(`⚠️ Trial expires soon for ${user.phone}`);
+    // Here you could send WhatsApp reminders
+  }
+  
+  // Check for expired trials
+  await checkExpiredTrials();
+}
+
+// Run subscription check every hour
+setInterval(dailySubscriptionCheck, 60 * 60 * 1000);
+
+// ============================================================
 // START SERVER
 // ============================================================
 
@@ -798,6 +1209,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ DukaApp server running on port ${PORT}`);
   console.log(`✅ Health check: /health`);
   console.log(`✅ WhatsApp webhook: /whatsapp`);
-  console.log(`✅ Stock management commands enabled`);
+  console.log(`✅ M-Pesa STK Push enabled with your sandbox credentials`);
+  console.log(`✅ Stock management enabled`);
   console.log(`✅ Permanent user registration enabled`);
+  console.log(`✅ Subscription management enabled`);
 });
