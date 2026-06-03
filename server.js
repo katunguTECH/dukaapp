@@ -1,14 +1,14 @@
-// server.js - Complete DukaApp Server with Permanent User Registration
+// server.js - Complete DukaApp Server with M-Pesa Auto-Detection
 const express = require('express');
 const { MessagingResponse } = require('twilio').twiml;
 const path = require('path');
-const sqlite3 = require('sqlite3').verbose();
+const sqlite3 = require('sqlite3').verbose;
 const { open } = require('sqlite');
 const axios = require('axios');
 const app = express();
 
 // ============================================================
-// M-PESA DARAJA API CONFIGURATION (YOUR CREDENTIALS)
+// M-PESA DARAJA API CONFIGURATION
 // ============================================================
 
 const MPESA_CONFIG = {
@@ -64,7 +64,6 @@ async function initDatabase() {
   });
   
   await db.exec(`
-    -- Users table (basic user info)
     CREATE TABLE IF NOT EXISTS users (
       phone TEXT PRIMARY KEY,
       business_name TEXT,
@@ -79,7 +78,6 @@ async function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     
-    -- Transactions table (sales and expenses)
     CREATE TABLE IF NOT EXISTS transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT,
@@ -91,7 +89,6 @@ async function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     
-    -- Payments table (STK Push payments)
     CREATE TABLE IF NOT EXISTS payments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT,
@@ -102,7 +99,6 @@ async function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     
-    -- Stock products table
     CREATE TABLE IF NOT EXISTS stock_products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -115,7 +111,6 @@ async function initDatabase() {
       UNIQUE(phone, product_name)
     );
     
-    -- Stock transactions table
     CREATE TABLE IF NOT EXISTS stock_transactions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -129,7 +124,6 @@ async function initDatabase() {
       FOREIGN KEY (product_id) REFERENCES stock_products(id)
     );
     
-    -- SUBSCRIBERS TABLE - Comprehensive tracking
     CREATE TABLE IF NOT EXISTS subscribers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -151,7 +145,6 @@ async function initDatabase() {
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     
-    -- Payment history table
     CREATE TABLE IF NOT EXISTS payment_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       subscriber_id INTEGER,
@@ -166,7 +159,6 @@ async function initDatabase() {
       FOREIGN KEY (subscriber_id) REFERENCES subscribers(id)
     );
     
-    -- Trial tracking table
     CREATE TABLE IF NOT EXISTS trial_tracking (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -179,7 +171,6 @@ async function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     
-    -- Cancellation tracking table
     CREATE TABLE IF NOT EXISTS cancellation_tracking (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       phone TEXT NOT NULL,
@@ -193,11 +184,109 @@ async function initDatabase() {
   `);
   console.log('✅ Database ready');
   
-  // Run initial subscription check
   await checkExpiredTrials();
 }
 
 initDatabase();
+
+// ============================================================
+// M-PESA MESSAGE PARSING FUNCTIONS
+// ============================================================
+
+function isMpesaMessage(message) {
+  const mpesaKeywords = [
+    /confirmed/i,
+    /received/i,
+    /sent to/i,
+    /paid to/i,
+    /mpesa/i,
+    /kcb/i,
+    /balance/i,
+    /transaction cost/i,
+    /you have received/i,
+    /UEU/i,
+    /UESIR/i,
+    /UEVIR/i
+  ];
+  return mpesaKeywords.some(pattern => pattern.test(message));
+}
+
+function parseMpesaMessage(message) {
+  let amount = null;
+  let isReceived = false;
+  let sender = null;
+  let receiver = null;
+  let time = null;
+  let date = null;
+  let balance = null;
+  
+  // Pattern 1: "You have received Ksh3,000.00 from KCB"
+  const receivedPattern1 = /(?:You have received|Received)\s+Ksh([\d,]+(?:\.\d{2})?)\s+from\s+(.+?)(?:\s+on|$)/i;
+  
+  // Pattern 2: "Confirmed.You have received Ksh3,000.00 from KCB"
+  const receivedPattern2 = /Confirmed\.\s*You have received\s+Ksh([\d,]+(?:\.\d{2})?)\s+from\s+(.+?)(?:\s+on|$)/i;
+  
+  // Pattern 3: "Ksh300.00 sent to ALICE NYAMBURA"
+  const sentPattern1 = /Ksh([\d,]+(?:\.\d{2})?)\s+sent to\s+(.+?)(?:\s+on|$)/i;
+  
+  // Pattern 4: "Confirmed. Ksh300.00 sent to ALICE NYAMBURA"
+  const sentPattern2 = /Confirmed\.\s*Ksh([\d,]+(?:\.\d{2})?)\s+sent to\s+(.+?)(?:\s+on|$)/i;
+  
+  // Pattern 5: "Ksh300.00 paid to KIPKEMOI CHEPKWONY"
+  const paidPattern = /Ksh([\d,]+(?:\.\d{2})?)\s+paid to\s+(.+?)(?:\s+on|$)/i;
+  
+  let match;
+  
+  if ((match = message.match(receivedPattern1)) || (match = message.match(receivedPattern2))) {
+    amount = parseFloat(match[1].replace(/,/g, ''));
+    isReceived = true;
+    sender = match[2] || 'Unknown';
+  }
+  else if ((match = message.match(sentPattern1)) || (match = message.match(sentPattern2))) {
+    amount = parseFloat(match[1].replace(/,/g, ''));
+    isReceived = false;
+    receiver = match[2] || 'Unknown';
+  }
+  else if ((match = message.match(paidPattern))) {
+    amount = parseFloat(match[1].replace(/,/g, ''));
+    isReceived = false;
+    receiver = match[2] || 'Unknown';
+  }
+  else {
+    const amountMatch = message.match(/Ksh([\d,]+(?:\.\d{2})?)/i);
+    if (amountMatch) {
+      amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+      if (/received|from/i.test(message)) {
+        isReceived = true;
+      } else if (/sent|paid to/i.test(message)) {
+        isReceived = false;
+      }
+    }
+  }
+  
+  const dateMatch = message.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+  if (dateMatch) date = dateMatch[1];
+  
+  const timeMatch = message.match(/(\d{1,2}:\d{2}\s*(?:AM|PM))/i);
+  if (timeMatch) time = timeMatch[1];
+  
+  const balanceMatch = message.match(/(?:balance|New M-PESA balance is)\s+Ksh([\d,]+(?:\.\d{2})?)/i);
+  if (balanceMatch) balance = parseFloat(balanceMatch[1].replace(/,/g, ''));
+  
+  return { amount, isReceived, sender, receiver, date, time, balance };
+}
+
+async function recordMpesaTransaction(phone, amount, type, description, mpesaData = {}) {
+  const now = new Date();
+  const today = now.toISOString().split('T')[0];
+  
+  await db.run(`
+    INSERT INTO transactions (phone, amount, type, description, date, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `, phone, amount, type, `M-Pesa: ${description}`, today, now.toISOString());
+  
+  console.log(`📱 Auto-recorded ${type} for ${phone}: KES ${amount}`);
+}
 
 // ============================================================
 // M-PESA HELPER FUNCTIONS
@@ -209,9 +298,7 @@ async function getMpesaAccessToken() {
   try {
     const response = await axios.get(
       `${MPESA_API_BASE}/oauth/v1/generate?grant_type=client_credentials`,
-      {
-        headers: { Authorization: `Basic ${auth}` }
-      }
+      { headers: { Authorization: `Basic ${auth}` } }
     );
     console.log('✅ M-Pesa access token obtained');
     return response.data.access_token;
@@ -282,7 +369,7 @@ async function initiateSTKPush(phoneNumber, amount, accountReference, transactio
 }
 
 // ============================================================
-// SUBSCRIBER MANAGEMENT FUNCTIONS (PERMANENT STORAGE)
+// SUBSCRIBER MANAGEMENT FUNCTIONS
 // ============================================================
 
 async function recordNewSubscriber(phone, businessName, businessType, location) {
@@ -290,7 +377,6 @@ async function recordNewSubscriber(phone, businessName, businessType, location) 
   const trialEndDate = new Date();
   trialEndDate.setDate(trialEndDate.getDate() + 14);
   
-  // First, update the users table
   await db.run(`
     UPDATE users SET 
       business_name = ?, business_type = ?, location = ?, 
@@ -298,7 +384,6 @@ async function recordNewSubscriber(phone, businessName, businessType, location) 
     WHERE phone = ?
   `, businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(), phone);
   
-  // Check if subscriber already exists
   const existing = await db.get('SELECT * FROM subscribers WHERE phone = ?', phone);
   
   if (!existing) {
@@ -318,15 +403,6 @@ async function recordNewSubscriber(phone, businessName, businessType, location) 
     `, phone, now.toISOString(), trialEndDate.toISOString());
     
     console.log(`📊 New subscriber recorded: ${phone} - ${businessName}`);
-  } else {
-    // Update existing subscriber
-    await db.run(`
-      UPDATE subscribers SET 
-        business_name = ?, business_type = ?, location = ?,
-        trial_start_date = ?, trial_end_date = ?, updated_at = ?
-      WHERE phone = ?
-    `, businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(), now.toISOString(), phone);
-    console.log(`📊 Subscriber updated: ${phone}`);
   }
 }
 
@@ -434,7 +510,7 @@ async function activateSubscription(phone, paymentAmount, mpesaReceipt, checkout
 }
 
 // ============================================================
-// USER MANAGEMENT FUNCTIONS (PERMANENT)
+// USER MANAGEMENT FUNCTIONS
 // ============================================================
 
 async function getUser(phone) {
@@ -529,7 +605,7 @@ async function getLowStockProducts(phone) {
 }
 
 // ============================================================
-// ADMIN API ENDPOINTS (Password Protected)
+// ADMIN API ENDPOINTS
 // ============================================================
 
 app.use('/api/admin', adminAuth);
@@ -698,27 +774,90 @@ app.get('/agent-signup', (req, res) => {
 });
 
 // ============================================================
-// WHATSAPP WEBHOOK - MAIN HANDLER WITH PERMANENT REGISTRATION
+// WHATSAPP WEBHOOK - MAIN HANDLER WITH M-PESA AUTO-DETECTION
 // ============================================================
 
 app.post('/whatsapp', async (req, res) => {
   const twiml = new MessagingResponse();
-  const incomingMsg = req.body.Body ? req.body.Body.toLowerCase().trim() : '';
+  const incomingMsg = req.body.Body ? req.body.Body.trim() : '';
+  const incomingMsgLower = incomingMsg.toLowerCase();
   const userPhone = req.body.From || 'unknown';
   
-  console.log(`📩 Message from ${userPhone}: "${incomingMsg}"`);
+  console.log(`📩 Message from ${userPhone}: "${incomingMsg.substring(0, 100)}"`);
   
   let user = await getUser(userPhone);
   const subscription = await getSubscriptionStatus(userPhone);
   
+  // ============================================================
+  // M-PESA AUTO-DETECTION (Check before any other processing)
+  // ============================================================
+  
+  if (isMpesaMessage(incomingMsg) && user.registered === 1) {
+    const parsed = parseMpesaMessage(incomingMsg);
+    
+    if (parsed.amount && parsed.amount > 0) {
+      if (parsed.isReceived) {
+        await recordMpesaTransaction(userPhone, parsed.amount, 'sale', 
+          `Received from ${parsed.sender || 'customer'}`, parsed);
+        
+        const today = new Date().toISOString().split('T')[0];
+        const sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type IN ('sale', 'cash_sale') AND date = ?`, userPhone, today);
+        const expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`, userPhone, today);
+        const totalSales = sales?.total || 0;
+        const totalExpenses = expenses?.total || 0;
+        const profit = totalSales - totalExpenses;
+        
+        twiml.message(`✅ *M-Pesa Sale Auto-Recorded!*
+
+💰 Amount: KES ${parsed.amount.toFixed(2)}
+📊 From: ${parsed.sender || 'Customer'}
+🕐 Time: ${parsed.time || 'Today'}
+
+━━━━━━━━━━━━━━━━━━━━
+📈 Today's Profit: KES ${profit.toFixed(2)}
+
+Type *PROFIT* for full report.`);
+        
+        res.set('Content-Type', 'text/xml');
+        res.send(twiml.toString());
+        return;
+      } else {
+        await recordMpesaTransaction(userPhone, parsed.amount, 'expense', 
+          `Paid to ${parsed.receiver || 'supplier'}`, parsed);
+        
+        const today = new Date().toISOString().split('T')[0];
+        const sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type IN ('sale', 'cash_sale') AND date = ?`, userPhone, today);
+        const expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`, userPhone, today);
+        const totalSales = sales?.total || 0;
+        const totalExpenses = expenses?.total || 0;
+        const profit = totalSales - totalExpenses;
+        
+        twiml.message(`✅ *M-Pesa Expense Auto-Recorded!*
+
+💸 Amount: KES ${parsed.amount.toFixed(2)}
+📊 Paid to: ${parsed.receiver || 'Vendor'}
+🕐 Time: ${parsed.time || 'Today'}
+
+━━━━━━━━━━━━━━━━━━━━
+📈 Today's Profit: KES ${profit.toFixed(2)}
+
+Type *PROFIT* for full report.`);
+        
+        res.set('Content-Type', 'text/xml');
+        res.send(twiml.toString());
+        return;
+      }
+    }
+  }
+  
   // Expired subscription check
-  if (subscription.status === 'expired' && !['pay now', 'pay', 'start'].includes(incomingMsg)) {
+  if (subscription.status === 'expired' && !['pay now', 'pay', 'start'].includes(incomingMsgLower)) {
     twiml.message(`⚠️ *Subscription Expired*\n\nYour 14-day free trial has ended.\n\nPlease pay KES 299 to continue using DukaApp.\n\nReply *PAY NOW* to make payment via M-Pesa STK Push.`);
     res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
   
   // PAY NOW COMMAND
-  if (incomingMsg === 'pay now' || incomingMsg === 'pay') {
+  if (incomingMsgLower === 'pay now' || incomingMsgLower === 'pay') {
     if (subscription.status === 'active') {
       const endDate = new Date(subscription.endDate).toLocaleDateString();
       twiml.message(`✅ *Subscription Active*\n\nYour subscription is active until ${endDate}.\n\nNo payment needed at this time.`);
@@ -733,8 +872,6 @@ app.post('/whatsapp', async (req, res) => {
       await db.run(`INSERT INTO payments (phone, amount, checkout_request_id, status) VALUES (?, ?, ?, 'pending')`, userPhone, 299, result.checkoutRequestId);
       pendingPayments[result.checkoutRequestId] = { phone: userPhone, amount: 299 };
       console.log(`💰 STK Push initiated for ${userPhone}`);
-    } else {
-      console.error(`❌ STK Push failed for ${userPhone}: ${result.error}`);
     }
     res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
@@ -742,21 +879,21 @@ app.post('/whatsapp', async (req, res) => {
   // REGISTERED USER COMMANDS
   if (user.registered === 1) {
     // HELP
-    if (incomingMsg === 'help') {
+    if (incomingMsgLower === 'help') {
       let subInfo = subscription.status === 'trial' ? `\n🎟️ *Trial: ${subscription.daysLeft} days remaining*` : 
                     subscription.status === 'active' ? `\n✅ *Active: ${subscription.daysLeft} days remaining*` : '';
-      twiml.message(`📖 *DUKAAPP COMMANDS*${subInfo}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *Sales & Expenses*\n━━━━━━━━━━━━━━━━━━━━\n• sale [amount]\n• expense [amount]\n• cash [amount]\n\n📦 *Stock Management*\n━━━━━━━━━━━━━━━━━━━━\n• stock [product]\n• addstock [product] [qty]\n• usestock [product] [qty]\n• liststock\n• lowstock\n\n📊 *Reports*\n━━━━━━━━━━━━━━━━━━━━\n• profit\n• status\n\n💳 *Subscription*\n━━━━━━━━━━━━━━━━━━━━\n• pay now\n\nExamples: sale 1500, addstock sugar 50, profit, pay now`);
+      twiml.message(`📖 *DUKAAPP COMMANDS*${subInfo}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *Sales & Expenses*\n━━━━━━━━━━━━━━━━━━━━\n• sale [amount]\n• expense [amount]\n• cash [amount]\n\n📦 *Stock Management*\n━━━━━━━━━━━━━━━━━━━━\n• stock [product]\n• addstock [product] [qty]\n• usestock [product] [qty]\n• liststock\n• lowstock\n\n📊 *Reports*\n━━━━━━━━━━━━━━━━━━━━\n• profit\n• status\n\n💳 *Subscription*\n━━━━━━━━━━━━━━━━━━━━\n• pay now\n\n🤖 *M-Pesa Auto-Record*\nJust forward M-Pesa messages!\n• Received → Auto-SALE\n• Sent → Auto-EXPENSE\n\nExamples: sale 1500, addstock sugar 50, profit, pay now`);
     }
     // STATUS
-    else if (incomingMsg === 'status') {
+    else if (incomingMsgLower === 'status') {
       const products = await listStockProducts(userPhone);
       let subInfo = subscription.status === 'trial' ? `🎟️ Free Trial: ${subscription.daysLeft} days remaining` :
                     subscription.status === 'active' ? `✅ Subscription Active: ${subscription.daysLeft} days remaining` : `⚠️ Subscription Expired - Send PAY NOW to renew`;
       twiml.message(`📋 *BUSINESS STATUS*\n\n🏪 Business: ${user.business_name}\n📂 Type: ${user.business_type}\n📍 Location: ${user.location}\n━━━━━━━━━━━━━━━━━━━━\n${subInfo}\n━━━━━━━━━━━━━━━━━━━━\n📦 Products in stock: ${products.length}\n\nType "help" for all commands.`);
     }
     // STOCK commands
-    else if (incomingMsg.startsWith('stock')) {
-      const parts = incomingMsg.split(' ');
+    else if (incomingMsgLower.startsWith('stock')) {
+      const parts = incomingMsgLower.split(' ');
       const productName = parts.slice(1).join(' ');
       if (!productName) {
         const products = await listStockProducts(userPhone);
@@ -772,8 +909,8 @@ app.post('/whatsapp', async (req, res) => {
         else twiml.message(`📦 *${product.product_name.toUpperCase()}*\n\n📊 Current stock: ${product.quantity} ${product.unit}\nStatus: ${product.quantity <= product.reorder_level ? '⚠️ LOW STOCK' : '✅ In stock'}`);
       }
     }
-    else if (incomingMsg.startsWith('addstock')) {
-      const parts = incomingMsg.split(' ');
+    else if (incomingMsgLower.startsWith('addstock')) {
+      const parts = incomingMsgLower.split(' ');
       if (parts.length < 3) twiml.message(`📦 *Add Stock*\n\nType: addstock [product] [quantity]\nExample: addstock sugar 50`);
       else {
         const quantity = parseFloat(parts[parts.length - 1]);
@@ -785,8 +922,8 @@ app.post('/whatsapp', async (req, res) => {
         }
       }
     }
-    else if (incomingMsg.startsWith('usestock')) {
-      const parts = incomingMsg.split(' ');
+    else if (incomingMsgLower.startsWith('usestock')) {
+      const parts = incomingMsgLower.split(' ');
       if (parts.length < 3) twiml.message(`📦 *Use Stock*\n\nType: usestock [product] [quantity]\nExample: usestock sugar 5`);
       else {
         const quantity = parseFloat(parts[parts.length - 1]);
@@ -799,7 +936,7 @@ app.post('/whatsapp', async (req, res) => {
         }
       }
     }
-    else if (incomingMsg === 'liststock') {
+    else if (incomingMsgLower === 'liststock') {
       const products = await listStockProducts(userPhone);
       if (products.length === 0) twiml.message(`📦 *No products in inventory*\n\nAdd products with: addstock [product] [quantity]`);
       else {
@@ -809,7 +946,7 @@ app.post('/whatsapp', async (req, res) => {
         twiml.message(stockList);
       }
     }
-    else if (incomingMsg === 'lowstock') {
+    else if (incomingMsgLower === 'lowstock') {
       const lowProducts = await getLowStockProducts(userPhone);
       if (lowProducts.length === 0) twiml.message(`✅ *No low stock items*\n\nAll products are well stocked.`);
       else {
@@ -820,29 +957,29 @@ app.post('/whatsapp', async (req, res) => {
       }
     }
     // FINANCIAL commands
-    else if (incomingMsg.startsWith('sale')) {
-      const amount = incomingMsg.split(' ')[1];
+    else if (incomingMsgLower.startsWith('sale')) {
+      const amount = incomingMsgLower.split(' ')[1];
       if (amount && !isNaN(amount)) { await db.run(`INSERT INTO transactions (phone, amount, type) VALUES (?, ?, 'sale')`, userPhone, amount); twiml.message(`✅ *Sale Recorded!* KES ${amount}`); }
       else twiml.message(`📊 *Record a Sale*\n\nType: sale [amount]\nExample: sale 1500`);
     }
-    else if (incomingMsg.startsWith('expense')) {
-      const amount = incomingMsg.split(' ')[1];
+    else if (incomingMsgLower.startsWith('expense')) {
+      const amount = incomingMsgLower.split(' ')[1];
       if (amount && !isNaN(amount)) { await db.run(`INSERT INTO transactions (phone, amount, type) VALUES (?, ?, 'expense')`, userPhone, amount); twiml.message(`✅ *Expense Recorded!* KES ${amount}`); }
       else twiml.message(`💸 *Record an Expense*\n\nType: expense [amount]\nExample: expense 500`);
     }
-    else if (incomingMsg.startsWith('cash')) {
-      const amount = incomingMsg.split(' ')[1];
+    else if (incomingMsgLower.startsWith('cash')) {
+      const amount = incomingMsgLower.split(' ')[1];
       if (amount && !isNaN(amount)) { await db.run(`INSERT INTO transactions (phone, amount, type) VALUES (?, ?, 'cash_sale')`, userPhone, amount); twiml.message(`✅ *Cash Sale Recorded!* KES ${amount}`); }
       else twiml.message(`💵 *Record a Cash Sale*\n\nType: cash [amount]\nExample: cash 1000`);
     }
-    else if (incomingMsg === 'profit') {
+    else if (incomingMsgLower === 'profit') {
       const today = new Date().toISOString().split('T')[0];
       const sales = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type IN ('sale', 'cash_sale') AND date = ?`, userPhone, today);
       const expenses = await db.get(`SELECT SUM(amount) as total FROM transactions WHERE phone = ? AND type = 'expense' AND date = ?`, userPhone, today);
       const totalSales = sales?.total || 0, totalExpenses = expenses?.total || 0, profit = totalSales - totalExpenses;
       twiml.message(`📊 *TODAY'S PROFIT*\n\n💰 Sales: KES ${totalSales}\n💸 Expenses: KES ${totalExpenses}\n━━━━━━━━━━━━━━━━━━━━\n📈 PROFIT: KES ${profit}`);
     }
-    else if (incomingMsg === 'agent') {
+    else if (incomingMsgLower === 'agent') {
       twiml.message(`🤝 *Become a DukaApp Agent*\n\n• KES 200 per shop you sign up\n• 10% recurring commission\n\nStart here: https://dukaapp.online/agent-signup`);
     }
     else {
@@ -853,41 +990,30 @@ app.post('/whatsapp', async (req, res) => {
   }
   
   // ============================================================
-  // REGISTRATION FLOW (Only for NEW users)
+  // REGISTRATION FLOW
   // ============================================================
   
-  // Step 2: Waiting for business name
   if (user.step === 'waiting_for_business_name') {
     await updateUser(userPhone, { business_name: incomingMsg, step: 'waiting_for_business_type' });
     twiml.message(`Great! What type of business do you run?\n\nExamples: Retail Shop, Grocery, Hardware, Restaurant, Salon, Boutique, etc.\n\nType your business type.`);
     res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
   
-  // Step 3: Waiting for business type
   if (user.step === 'waiting_for_business_type') {
     await updateUser(userPhone, { business_type: incomingMsg, step: 'waiting_for_location' });
     twiml.message(`Where is your business located?\n\nExamples: Nairobi, Mombasa, Kisumu, Nakuru, etc.\n\nType your location.`);
     res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
   
-  // Step 4: Waiting for location - Complete registration (PERMANENT STORAGE)
   if (user.step === 'waiting_for_location') {
-    // Update users table
-    await updateUser(userPhone, { 
-      location: incomingMsg, 
-      registered: 1, 
-      step: 'none'
-    });
+    await updateUser(userPhone, { location: incomingMsg, registered: 1, step: 'none' });
     
-    // Get the updated user data
     user = await getUser(userPhone);
     
-    // CRITICAL: Record in subscribers table for permanent tracking
     const now = new Date();
     const trialEndDate = new Date();
     trialEndDate.setDate(trialEndDate.getDate() + 14);
     
-    // Check if subscriber already exists
     const existingSubscriber = await db.get('SELECT * FROM subscribers WHERE phone = ?', userPhone);
     
     if (!existingSubscriber) {
@@ -902,23 +1028,12 @@ app.post('/whatsapp', async (req, res) => {
          JSON.stringify([{ status: 'trial', date: now.toISOString(), note: 'User registered' }]),
          now.toISOString(), now.toISOString());
       
-      // Also record in trial tracking
       await db.run(`
         INSERT INTO trial_tracking (phone, trial_start_date, trial_end_date, trial_status)
         VALUES (?, ?, ?, 'active')
       `, userPhone, now.toISOString(), trialEndDate.toISOString());
       
       console.log(`✅ Subscriber permanently recorded: ${userPhone} - ${user.business_name}`);
-    } else {
-      // Update existing subscriber
-      await db.run(`
-        UPDATE subscribers SET 
-          business_name = ?, business_type = ?, location = ?,
-          trial_start_date = ?, trial_end_date = ?, updated_at = ?
-        WHERE phone = ?
-      `, user.business_name, user.business_type, incomingMsg, 
-         now.toISOString(), trialEndDate.toISOString(), now.toISOString(), userPhone);
-      console.log(`✅ Subscriber updated: ${userPhone}`);
     }
     
     const welcomeMsg = `✅ *Registration Complete!* ✅
@@ -950,10 +1065,10 @@ You have a *14-day free trial*!
 After trial: KES 299/month
 Reply *PAY NOW* to subscribe early
 
-🤖 *AUTO-RECORDING*
+🤖 *M-Pesa Auto-Record* 🆕
 Just forward your M-Pesa messages!
-• Received money → Auto-sale
-• Sent money → Auto-expense
+• Received money → Auto-SALE
+• Sent money → Auto-EXPENSE
 
 Type *HELP* anytime to see all commands.
 
@@ -963,14 +1078,12 @@ Thank you for choosing DukaApp! 🚀`;
     res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
   
-  // START COMMAND - Begin registration
-  if (incomingMsg === 'start') {
+  if (incomingMsgLower === 'start') {
     await updateUser(userPhone, { step: 'waiting_for_business_name' });
     twiml.message(`🎉 *Welcome to DukaApp!* 🎉\n\nLet's get your business registered.\n\n*Step 1 of 3:* What is your business name?\n\nType your business name (e.g., "Katungu General Store")`);
     res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
   }
   
-  // DEFAULT RESPONSE FOR UNREGISTERED USERS
   twiml.message(`👋 *Welcome to DukaApp!* 👋\n\nTrack sales, expenses, and profit on WhatsApp.\n\nTo begin your 14-day free trial, reply: *START*\n\nWe'll ask for your business name, type, and location.\n\nQuestions? Reply: SUPPORT`);
   
   res.set('Content-Type', 'text/xml');
@@ -987,7 +1100,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Health check: /health`);
   console.log(`✅ WhatsApp webhook: /whatsapp`);
   console.log(`✅ Admin dashboard: /admin-dashboard (Password: Dallas123!)`);
-  console.log(`✅ Subscriber tracking enabled - PERMANENT REGISTRATION`);
-  console.log(`✅ M-Pesa STK Push enabled`);
+  console.log(`✅ M-Pesa Auto-Detection enabled`);
+  console.log(`✅ Subscriber tracking enabled`);
   console.log(`✅ Stock management enabled`);
 });
