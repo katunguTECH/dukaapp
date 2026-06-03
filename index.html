@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>DukaApp - Track Business Profit on WhatsApp</title>
+    <title>DukaApp - Track Profit & Access Loans | WhatsApp Business Tool</title>
     <style>
         * {
             margin: 0;
@@ -92,6 +92,32 @@
             transform: translateY(-2px);
         }
 
+        .btn-secondary {
+            background: #F3F4F6;
+            color: #1F2937;
+            padding: 12px 28px;
+            border-radius: 40px;
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .btn-loan {
+            background: linear-gradient(135deg, #FF8C00, #FF6B00);
+            color: white;
+            padding: 16px 36px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            display: inline-block;
+            transition: transform 0.2s;
+            font-size: 18px;
+            box-shadow: 0 6px 12px -6px rgba(255, 107, 0, 0.4);
+        }
+
+        .btn-loan:hover {
+            transform: translateY(-2px);
+        }
+
         /* Hero Section */
         .hero {
             padding: 60px 0 80px;
@@ -111,6 +137,16 @@
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
+        }
+
+        .hero .loan-highlight {
+            background: linear-gradient(135deg, #FF8C00, #FF6B00);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            display: block;
+            font-size: 56px;
+            margin-top: 10px;
         }
 
         .hero p {
@@ -139,6 +175,52 @@
             margin-bottom: 24px;
         }
 
+        /* Loan Banner */
+        .loan-banner {
+            background: linear-gradient(135deg, #FFF3E0, #FFE0B2);
+            border-radius: 30px;
+            padding: 40px;
+            margin: 40px 0;
+            text-align: center;
+            border: 1px solid #FFD699;
+        }
+
+        .loan-banner h2 {
+            font-size: 32px;
+            color: #E65100;
+            margin-bottom: 15px;
+        }
+
+        .loan-banner .loan-amount {
+            font-size: 48px;
+            font-weight: 800;
+            color: #FF6B00;
+            margin: 15px 0;
+        }
+
+        .loan-banner .loan-stats {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin: 25px 0;
+            flex-wrap: wrap;
+        }
+
+        .loan-stat {
+            text-align: center;
+        }
+
+        .loan-stat .number {
+            font-size: 28px;
+            font-weight: 800;
+            color: #E65100;
+        }
+
+        .loan-stat .label {
+            font-size: 14px;
+            color: #6B7280;
+        }
+
         /* Features Grid */
         .features {
             padding: 60px 0;
@@ -164,6 +246,14 @@
         .feature-card {
             text-align: center;
             padding: 24px;
+            background: white;
+            border-radius: 20px;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
         }
 
         .feature-icon {
@@ -174,6 +264,20 @@
         .feature-card h3 {
             font-size: 24px;
             margin-bottom: 12px;
+        }
+
+        .feature-card p {
+            color: #6B7280;
+            font-size: 15px;
+        }
+
+        .loan-feature {
+            border: 2px solid #FF8C00;
+            background: linear-gradient(135deg, #FFF8F0, white);
+        }
+
+        .loan-feature .feature-icon {
+            font-size: 48px;
         }
 
         /* How it works */
@@ -222,6 +326,29 @@
         .cta-banner h2 {
             font-size: 32px;
             margin-bottom: 20px;
+        }
+
+        /* Loan Partners */
+        .partners {
+            padding: 40px 0;
+            text-align: center;
+        }
+
+        .partner-logos {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            flex-wrap: wrap;
+            margin-top: 30px;
+        }
+
+        .partner {
+            background: white;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-weight: 600;
+            color: #0F2B3D;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
         /* Footer */
@@ -275,8 +402,11 @@
 
         @media (max-width: 768px) {
             .hero h1 { font-size: 36px; }
+            .hero .loan-highlight { font-size: 42px; }
             .navbar { flex-direction: column; }
             .section-title { font-size: 28px; }
+            .loan-banner h2 { font-size: 24px; }
+            .loan-banner .loan-amount { font-size: 36px; }
         }
     </style>
 </head>
@@ -288,6 +418,7 @@
         <div class="logo">DukaApp</div>
         <div class="nav-links">
             <a href="#features">Features</a>
+            <a href="#loans">Loans</a>
             <a href="#how-it-works">How it works</a>
             <a href="#contact">Contact</a>
             <a href="/agent-signup" class="btn-outline">Become an Agent</a>
@@ -297,12 +428,37 @@
     <!-- Hero Section -->
     <div class="hero">
         <div class="whatsapp-badge">✅ Works on WhatsApp | No App Required</div>
-        <h1>Unajua <span class="highlight">Faida Yako</span> ya Leo?</h1>
-        <p>DukaApp automatically calculates your daily profit from M-Pesa messages. Get a clear report every evening. Simple, fast, and made for Kenyan dukas.</p>
+        <h1>Unajua <span class="highlight">Faida Yako</span> ya Leo?<br>
+        <span class="loan-highlight">Pata Loan Hadi KES 100,000+</span></h1>
+        <p>DukaApp automatically calculates your daily profit from M-Pesa messages. Get a clear report every evening. Plus, use your sales history to access business loans!</p>
         <div class="hero-buttons">
-            <a href="https://wa.me/14155238886?text=join%20adjective-weigh" class="btn-primary" target="_blank">Start Free Trial →</a>
+            <a href="https://wa.me/14155238886?text=start" class="btn-primary" target="_blank">Start Free Trial →</a>
+            <a href="#loans" class="btn-loan">💰 Check Loan Eligibility →</a>
         </div>
         <p style="font-size: 14px; color: #6B7280;">✅ 14 days free. No credit card. Cancel anytime.</p>
+    </div>
+
+    <!-- LOAN BANNER - Prominent Display -->
+    <div id="loans" class="loan-banner">
+        <h2>🏦 Pata Loan kwa Biashara Yako!</h2>
+        <p>Your transaction history = Your credit score. No collateral needed.</p>
+        <div class="loan-amount">🎯 Loan Amount: KES 10,000 - 500,000+</div>
+        <div class="loan-stats">
+            <div class="loan-stat">
+                <div class="number">85%</div>
+                <div class="label">of duka owners took repeat loans</div>
+            </div>
+            <div class="loan-stat">
+                <div class="number">3%</div>
+                <div class="label">non-performing loan rate</div>
+            </div>
+            <div class="loan-stat">
+                <div class="number">82%</div>
+                <div class="label">average revenue increase</div>
+            </div>
+        </div>
+        <a href="https://wa.me/14155238886?text=loan%20check" class="btn-loan" style="display: inline-block; margin-top: 20px;">📊 Check Your Loan Eligibility →</a>
+        <p style="margin-top: 20px; font-size: 14px;">Partner lenders: 4G Capital, Branch, Tala, Equity Bank</p>
     </div>
 
     <!-- Features Section -->
@@ -320,10 +476,10 @@
                     <h3>Expense Tracking</h3>
                     <p>Record stock, rent, or any expense. See where your money goes.</p>
                 </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🔮</div>
-                    <h3>Loan Ready Data</h3>
-                    <p>Your sales history helps you qualify for business loans automatically.</p>
+                <div class="feature-card loan-feature">
+                    <div class="feature-icon">🏦</div>
+                    <h3 style="color: #E65100;">Loan Access 🆕</h3>
+                    <p>Your sales history helps you qualify for business loans automatically. Up to KES 500,000!</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📱</div>
@@ -344,6 +500,18 @@
         </div>
     </div>
 
+    <!-- Loan Partners Section -->
+    <div class="partners">
+        <h3 style="color: #0F2B3D;">Our Lending Partners</h3>
+        <div class="partner-logos">
+            <div class="partner">🏦 4G Capital</div>
+            <div class="partner">💰 Branch</div>
+            <div class="partner">⭐ Tala</div>
+            <div class="partner">🏛️ Equity Bank</div>
+            <div class="partner">📈 M-Kopa</div>
+        </div>
+    </div>
+
     <!-- How It Works -->
     <div id="how-it-works" class="how-it-works">
         <div class="container">
@@ -352,7 +520,7 @@
                 <div class="step">
                     <div class="step-number">1</div>
                     <h3>Join on WhatsApp</h3>
-                    <p>Click "Start Free Trial" and send the message to join our WhatsApp.</p>
+                    <p>Click "Start Free Trial" and send START to begin.</p>
                 </div>
                 <div class="step">
                     <div class="step-number">2</div>
@@ -367,7 +535,7 @@
                 <div class="step">
                     <div class="step-number">4</div>
                     <h3>Unlock Loans</h3>
-                    <p>After 60 days of data, qualify for working capital loans.</p>
+                    <p>After 60 days of data, qualify for working capital loans up to KES 500,000!</p>
                 </div>
             </div>
         </div>
@@ -385,8 +553,8 @@
                 </div>
                 <div style="background: #F9FAFB; padding: 30px; border-radius: 20px;">
                     <div style="font-size: 40px;">💰</div>
-                    <h3>Sales</h3>
-                    <p><a href="mailto:sales@dukaapp.online" style="color: #25A55C;">sales@dukaapp.online</a></p>
+                    <h3>Loans & Credit</h3>
+                    <p><a href="mailto:loans@dukaapp.online" style="color: #FF8C00;">loans@dukaapp.online</a></p>
                 </div>
                 <div style="background: #F9FAFB; padding: 30px; border-radius: 20px;">
                     <div style="font-size: 40px;">🛠️</div>
@@ -399,9 +567,12 @@
 
     <!-- CTA Banner -->
     <div class="cta-banner">
-        <h2>Ready to know your real profit?</h2>
-        <p style="margin-bottom: 8px;">Join 100+ duka owners already tracking daily earnings.</p>
-        <a href="https://wa.me/14155238886?text=join%20adjective-weigh" class="btn-primary" style="background: #25A55C;" target="_blank">Start Free Trial →</a>
+        <h2>Ready to grow your business?</h2>
+        <p style="margin-bottom: 8px;">Track profit, manage stock, and access loans - all on WhatsApp.</p>
+        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
+            <a href="https://wa.me/14155238886?text=start" class="btn-primary" style="background: #25A55C;" target="_blank">Start Free Trial →</a>
+            <a href="https://wa.me/14155238886?text=loan%20check" class="btn-loan" target="_blank">💰 Check Loan Eligibility →</a>
+        </div>
         <p style="margin-top: 24px; font-size: 14px; opacity: 0.8;">No app download. Works on any phone.</p>
     </div>
 
@@ -409,12 +580,14 @@
     <div class="footer">
         <div class="footer-links">
             <a href="#features">Features</a>
+            <a href="#loans">Loans</a>
             <a href="#how-it-works">How it works</a>
             <a href="#contact">Contact</a>
             <a href="/agent-signup">Become an Agent</a>
         </div>
         <p>&copy; 2026 DukaApp Business Technologies. All Rights Reserved.</p>
-        <p style="margin-top: 8px;">📧 info@dukaapp.online | 💰 sales@dukaapp.online | 🛠️ support@dukaapp.online</p>
+        <p style="margin-top: 8px;">📧 info@dukaapp.online | 💰 loans@dukaapp.online | 🛠️ support@dukaapp.online</p>
+        <p style="margin-top: 8px; font-size: 12px; color: #9CA3AF;">💡 Track profit. Build credit. Access loans.</p>
     </div>
 </div>
 
