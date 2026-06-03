@@ -1,7 +1,7 @@
 {
   "name": "dukaapp",
   "version": "2.0.0",
-  "description": "DukaApp - WhatsApp Business Profit Tracker with M-Pesa Payments",
+  "description": "DukaApp - WhatsApp Business Profit Tracker with Permanent Storage",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -10,11 +10,13 @@
   "dependencies": {
     "express": "^4.18.2",
     "twilio": "^4.19.0",
-    "sqlite3": "^5.1.6",
-    "sqlite": "^5.1.1",
+    "pg": "^8.11.3",
     "axios": "^1.6.0"
   },
   "engines": {
     "node": ">=18.0.0"
-  }
+  },
+  "keywords": ["whatsapp", "business", "profit", "tracker", "kenya", "mpesa"],
+  "author": "Henry Munyoki",
+  "license": "ISC"
 }
