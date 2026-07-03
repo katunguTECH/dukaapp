@@ -42,27 +42,74 @@ const upload = multer({
 });
 
 // ============================================================
-// POSTGRESQL DATABASE CONNECTION
+// POSTGRESQL DATABASE CONNECTION - IMPROVED FOR RAILWAY
 // ============================================================
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
+let pool;
 
-pool.connect((err, client, release) => {
-    if (err) {
-        console.error('❌ Database connection error:', err.stack);
-    } else {
-        console.log('✅ Connected to PostgreSQL database');
-        release();
+function initPool() {
+    const databaseUrl = process.env.DATABASE_URL || process.env.PG_URL;
+    
+    if (!databaseUrl) {
+        console.error('❌ DATABASE_URL environment variable is not set!');
+        console.log('📋 Please set DATABASE_URL in your environment variables.');
+        return null;
     }
-});
+    
+    console.log('📋 Database URL found, connecting...');
+    
+    pool = new Pool({
+        connectionString: databaseUrl,
+        ssl: {
+            rejectUnauthorized: false
+        },
+        connectionTimeoutMillis: 10000,
+        idleTimeoutMillis: 30000,
+    });
+    
+    pool.on('error', (err) => {
+        console.error('❌ Unexpected database error:', err);
+    });
+    
+    return pool;
+}
+
+// Initialize pool
+initPool();
+
+// Test database connection
+async function testDatabaseConnection() {
+    if (!pool) {
+        console.error('❌ Pool not initialized');
+        return false;
+    }
+    
+    try {
+        const client = await pool.connect();
+        console.log('✅ Connected to PostgreSQL database successfully');
+        client.release();
+        return true;
+    } catch (err) {
+        console.error('❌ Database connection error:', err.message);
+        console.log('📋 Please check that DATABASE_URL is set correctly');
+        console.log('📋 Connection string format: postgresql://user:pass@host:port/db');
+        return false;
+    }
+}
 
 // Initialize all tables
 async function initDatabase() {
-    const client = await pool.connect();
+    if (!pool) {
+        console.error('❌ Cannot initialize database: pool not created');
+        setTimeout(initDatabase, 5000);
+        return;
+    }
+    
+    let client;
     try {
+        client = await pool.connect();
+        console.log('✅ Database connection verified, creating tables...');
+        
         // Users table
         await client.query(`
             CREATE TABLE IF NOT EXISTS users (
@@ -217,13 +264,21 @@ async function initDatabase() {
 
         console.log('✅ PostgreSQL tables ready');
     } catch (error) {
-        console.error('Database init error:', error);
+        console.error('❌ Database init error:', error.message);
+        // Retry after 5 seconds
+        console.log('🔄 Retrying database connection in 5 seconds...');
+        setTimeout(initDatabase, 5000);
     } finally {
-        client.release();
+        if (client) client.release();
     }
 }
 
-initDatabase();
+// Initialize database with retry
+setTimeout(() => {
+    testDatabaseConnection().then(() => {
+        initDatabase();
+    });
+}, 1000);
 
 // ============================================================
 // M-PESA DARAJA API CONFIGURATION
@@ -564,9 +619,9 @@ async function recordMpesaTransaction(phone, amount, type, description) {
     try {
         const today = new Date().toISOString().split('T')[0];
         await client.query(`
-                INSERT INTO transactions (phone, amount, type, description, date, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6)
-            `, [phone, amount, type, `M-Pesa: ${description}`, today, new Date().toISOString()]);
+            INSERT INTO transactions (phone, amount, type, description, date, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        `, [phone, amount, type, `M-Pesa: ${description}`, today, new Date().toISOString()]);
         console.log(`📱 Auto-recorded ${type} for ${phone}: KES ${amount}`);
     } finally {
         client.release();
@@ -588,9 +643,9 @@ async function getUser(phone) {
             trialEndDate.setDate(trialEndDate.getDate() + 14);
 
             await client.query(`
-                    INSERT INTO users (phone, step, trial_start_date, trial_end_date, subscription_status, created_at)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                `, [phone, 'none', now.toISOString(), trialEndDate.toISOString(), 'trial', now.toISOString()]);
+                INSERT INTO users (phone, step, trial_start_date, trial_end_date, subscription_status, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            `, [phone, 'none', now.toISOString(), trialEndDate.toISOString(), 'trial', now.toISOString()]);
 
             result = await client.query('SELECT * FROM users WHERE phone = $1', [phone]);
             console.log(`🆕 Created new user: ${phone}`);
@@ -648,27 +703,27 @@ async function recordNewSubscriber(phone, businessName, businessType, location) 
         trialEndDate.setDate(trialEndDate.getDate() + 14);
 
         await client.query(`
-                UPDATE users SET
-                    business_name = $1, business_type = $2, location = $3,
-                    registered = 1, trial_start_date = $4, trial_end_date = $5
-                WHERE phone = $6
-            `, [businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(), phone]);
+            UPDATE users SET
+                business_name = $1, business_type = $2, location = $3,
+                registered = 1, trial_start_date = $4, trial_end_date = $5
+            WHERE phone = $6
+        `, [businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(), phone]);
 
         const existing = await client.query('SELECT * FROM subscribers WHERE phone = $1', [phone]);
 
         if (existing.rows.length === 0) {
             await client.query(`
-                    INSERT INTO subscribers (
-                        phone, business_name, business_type, location,
-                        subscription_status, trial_start_date, trial_end_date,
-                        status_history, created_at, updated_at
-                    ) VALUES ($1, $2, $3, $4, 'trial', $5, $6, $7, $8, $9)
-                `, [phone, businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(),
-                JSON.stringify([{ status: 'trial', date: now.toISOString(), note: 'User registered' }]),
-                now.toISOString(), now.toISOString()
-            ]);
+                INSERT INTO subscribers (
+                    phone, business_name, business_type, location,
+                    subscription_status, trial_start_date, trial_end_date,
+                    status_history, created_at, updated_at
+                ) VALUES ($1, $2, $3, $4, 'trial', $5, $6, $7, $8, $9)
+            `, [phone, businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(),
+            JSON.stringify([{ status: 'trial', date: now.toISOString(), note: 'User registered' }]),
+            now.toISOString(), now.toISOString()
+        ]);
 
-            console.log(`📊 New subscriber permanently recorded: ${phone} - ${businessName}`);
+        console.log(`📊 New subscriber permanently recorded: ${phone} - ${businessName}`);
         }
     } finally {
         client.release();
@@ -691,8 +746,8 @@ async function calculateCreditScore(phone) {
         }
 
         const transactions = await client.query(`
-                SELECT COUNT(*) as total FROM transactions WHERE phone = $1 AND type IN ('sale', 'cash_sale') AND date >= date('now', '-90 days')
-            `, [phone]);
+            SELECT COUNT(*) as total FROM transactions WHERE phone = $1 AND type IN ('sale', 'cash_sale') AND date >= date('now', '-90 days')
+        `, [phone]);
         score += Math.min(25, Math.floor((transactions.rows[0]?.total || 0) / 4));
 
         return Math.min(100, score);
@@ -785,14 +840,14 @@ app.post('/api/upload-statement', upload.single('statement'), async (req, res) =
             for (const t of transactions) {
                 if (t.amount && t.date) {
                     await client.query(`
-                            INSERT INTO transactions (phone, amount, type, category, description, date, created_at)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        `, [userPhone, t.amount, t.type === 'received' ? 'sale' : 'expense',
-                        t.category || 'mpesa',
-                        `M-Pesa: ${t.receipt} - ${t.sender || t.receiver || 'Unknown'}`,
-                        t.date ? t.date.split(' ')[0] : new Date().toISOString().split('T')[0],
-                        t.date || new Date().toISOString()
-                    ]);
+                        INSERT INTO transactions (phone, amount, type, category, description, date, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    `, [userPhone, t.amount, t.type === 'received' ? 'sale' : 'expense',
+                    t.category || 'mpesa',
+                    `M-Pesa: ${t.receipt} - ${t.sender || t.receiver || 'Unknown'}`,
+                    t.date ? t.date.split(' ')[0] : new Date().toISOString().split('T')[0],
+                    t.date || new Date().toISOString()
+                ]);
                     savedCount++;
                 }
             }
@@ -920,14 +975,14 @@ Try again or send "UPLOAD" for help.`);
             for (const t of transactions) {
                 if (t.amount && t.date) {
                     await client.query(`
-                            INSERT INTO transactions (phone, amount, type, category, description, date, created_at)
-                            VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        `, [userPhone, t.amount, t.type === 'received' ? 'sale' : 'expense',
-                        t.category || 'mpesa',
-                        `M-Pesa: ${t.receipt} - ${t.sender || t.receiver || 'Unknown'}`,
-                        t.date ? t.date.split(' ')[0] : new Date().toISOString().split('T')[0],
-                        t.date || new Date().toISOString()
-                    ]);
+                        INSERT INTO transactions (phone, amount, type, category, description, date, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    `, [userPhone, t.amount, t.type === 'received' ? 'sale' : 'expense',
+                    t.category || 'mpesa',
+                    `M-Pesa: ${t.receipt} - ${t.sender || t.receiver || 'Unknown'}`,
+                    t.date ? t.date.split(' ')[0] : new Date().toISOString().split('T')[0],
+                    t.date || new Date().toISOString()
+                ]);
                     savedCount++;
                 }
             }
@@ -1057,9 +1112,9 @@ Send "UPLOAD" to get started. 🚀`);
                 const today = new Date().toISOString().split('T')[0];
                 if (parsed.isReceived) {
                     await client.query(`
-                            INSERT INTO transactions (phone, amount, type, description, date, created_at)
-                            VALUES ($1, $2, 'sale', $3, $4, $5)
-                        `, [userPhone, parsed.amount, `Received from ${parsed.sender || 'customer'}`, today, new Date().toISOString()]);
+                        INSERT INTO transactions (phone, amount, type, description, date, created_at)
+                        VALUES ($1, $2, 'sale', $3, $4, $5)
+                    `, [userPhone, parsed.amount, `Received from ${parsed.sender || 'customer'}`, today, new Date().toISOString()]);
                     twiml.message(`✅ *M-Pesa Sale Auto-Recorded!*
 
 💰 Amount: KES ${parsed.amount.toFixed(2)}
@@ -1068,9 +1123,9 @@ Send "UPLOAD" to get started. 🚀`);
 Type *PROFIT* for full report.`);
                 } else {
                     await client.query(`
-                            INSERT INTO transactions (phone, amount, type, description, date, created_at)
-                            VALUES ($1, $2, 'expense', $3, $4, $5)
-                        `, [userPhone, parsed.amount, `Paid to ${parsed.receiver || 'supplier'}`, today, new Date().toISOString()]);
+                        INSERT INTO transactions (phone, amount, type, description, date, created_at)
+                        VALUES ($1, $2, 'expense', $3, $4, $5)
+                    `, [userPhone, parsed.amount, `Paid to ${parsed.receiver || 'supplier'}`, today, new Date().toISOString()]);
                     twiml.message(`✅ *M-Pesa Expense Auto-Recorded!*
 
 💸 Amount: KES ${parsed.amount.toFixed(2)}
@@ -1161,9 +1216,9 @@ Keep using DukaApp and check again in 2 weeks!`);
                     const client = await pool.connect();
                     try {
                         await client.query(`
-                                INSERT INTO loan_applications (phone, business_name, business_type, business_location, loan_amount, status, credit_score, eligibility, application_date)
-                                VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
-                            `, [userPhone, user.business_name, user.business_type, user.location, eligibility.eligibleAmount, eligibility.creditScore, eligibility.recommendation, new Date().toISOString()]);
+                            INSERT INTO loan_applications (phone, business_name, business_type, business_location, loan_amount, status, credit_score, eligibility, application_date)
+                            VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
+                        `, [userPhone, user.business_name, user.business_type, user.location, eligibility.eligibleAmount, eligibility.creditScore, eligibility.recommendation, new Date().toISOString()]);
                         twiml.message(`✅ *Loan Application Submitted!*
 
 📊 Credit Score: ${eligibility.creditScore}/100
@@ -1180,9 +1235,9 @@ Reply *CONSENT YES* to share your data with lenders.`);
                 const client = await pool.connect();
                 try {
                     await client.query(`
-                            INSERT INTO customer_consent (phone, consent_type, consent_given, consent_date, purpose)
-                            VALUES ($1, 'data_sharing', 1, $2, 'Loan application processing')
-                        `, [userPhone, new Date().toISOString()]);
+                        INSERT INTO customer_consent (phone, consent_type, consent_given, consent_date, purpose)
+                        VALUES ($1, 'data_sharing', 1, $2, 'Loan application processing')
+                    `, [userPhone, new Date().toISOString()]);
                     twiml.message(`✅ *Thank you for your consent!*
 
 Your business data will now be shared with partner lenders.
@@ -1197,8 +1252,8 @@ Type *LOAN STATUS* to check your application status.`);
                 const client = await pool.connect();
                 try {
                     const result = await client.query(`
-                            SELECT * FROM loan_applications WHERE phone = $1 ORDER BY application_date DESC LIMIT 1
-                        `, [userPhone]);
+                        SELECT * FROM loan_applications WHERE phone = $1 ORDER BY application_date DESC LIMIT 1
+                    `, [userPhone]);
 
                     if (result.rows.length === 0) {
                         twiml.message(`📋 *No loan application found*
@@ -1421,9 +1476,9 @@ Add products with: addstock [product] [quantity]`);
             const client = await pool.connect();
             try {
                 const result = await client.query(`
-                        SELECT product_name, quantity, unit, reorder_level
-                        FROM stock_products WHERE phone = $1 AND quantity <= reorder_level ORDER BY quantity ASC
-                    `, [userPhone]);
+                    SELECT product_name, quantity, unit, reorder_level
+                    FROM stock_products WHERE phone = $1 AND quantity <= reorder_level ORDER BY quantity ASC
+                `, [userPhone]);
                 if (result.rows.length === 0) {
                     twiml.message(`✅ *No low stock items*
 
