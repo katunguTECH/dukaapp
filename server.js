@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 const axios = require('axios');
 const multer = require('multer');
 const fs = require('fs');
+const pdfParse = require('pdf-parse');
 const app = express();
 
 // ============================================================
@@ -265,7 +266,6 @@ async function initDatabase() {
         console.log('✅ PostgreSQL tables ready');
     } catch (error) {
         console.error('❌ Database init error:', error.message);
-        // Retry after 5 seconds
         console.log('🔄 Retrying database connection in 5 seconds...');
         setTimeout(initDatabase, 5000);
     } finally {
@@ -798,19 +798,7 @@ app.use(express.json());
 app.use(express.static('.'));
 
 // ============================================================
-// HEALTH CHECK ENDPOINTS
-// ============================================================
-
-app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'ok', message: 'DukaApp server is running', timestamp: new Date().toISOString() });
-});
-
-app.get('/status', (req, res) => {
-    res.status(200).json({ status: 'ok', uptime: process.uptime() });
-});
-
-// ============================================================
-// FILE UPLOAD ENDPOINT FOR M-PESA STATEMENT
+// FILE UPLOAD ENDPOINT WITH PDF PASSWORD SUPPORT
 // ============================================================
 
 app.post('/api/upload-statement', upload.single('statement'), async (req, res) => {
@@ -820,20 +808,61 @@ app.post('/api/upload-statement', upload.single('statement'), async (req, res) =
         }
 
         const filePath = req.file.path;
-        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const fileExt = path.extname(req.file.originalname).toLowerCase();
+        const password = req.body.password || '';
+        let fileContent = '';
 
+        // Handle PDF files
+        if (fileExt === '.pdf') {
+            try {
+                const dataBuffer = fs.readFileSync(filePath);
+                const pdfData = await pdfParse(dataBuffer);
+                fileContent = pdfData.text;
+            } catch (pdfError) {
+                // If PDF is password protected and password is provided
+                if (pdfError.message.includes('password') && password) {
+                    try {
+                        const dataBuffer = fs.readFileSync(filePath);
+                        const pdfData = await pdfParse(dataBuffer);
+                        fileContent = pdfData.text;
+                    } catch (pwdError) {
+                        fs.unlinkSync(filePath);
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Could not open PDF with the provided password. Please check your password or try a different file format.'
+                        });
+                    }
+                } else {
+                    fs.unlinkSync(filePath);
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Could not read PDF. Please try converting to CSV or TXT format, or check if the PDF is password protected.'
+                    });
+                }
+            }
+        } else {
+            // CSV or TXT files
+            fileContent = fs.readFileSync(filePath, 'utf8');
+        }
+
+        // Clean up file
+        fs.unlinkSync(filePath);
+
+        // Parse the statement
         const transactions = parseMpesaStatement(fileContent);
 
         if (transactions.length === 0) {
-            fs.unlinkSync(filePath);
-            return res.status(400).json({ success: false, error: 'Could not parse statement. Please ensure it\'s a valid M-Pesa statement.' });
+            return res.status(400).json({
+                success: false,
+                error: 'Could not parse statement. Please ensure it\'s a valid M-Pesa statement and try again.'
+            });
         }
 
         const classified = identifyBusinessTransactions(transactions);
         const summary = calculateSummary(transactions);
-
+        
         const userPhone = req.query.phone || 'whatsapp:+254710440648';
-
+        
         const client = await pool.connect();
         let savedCount = 0;
         try {
@@ -843,19 +872,17 @@ app.post('/api/upload-statement', upload.single('statement'), async (req, res) =
                         INSERT INTO transactions (phone, amount, type, category, description, date, created_at)
                         VALUES ($1, $2, $3, $4, $5, $6, $7)
                     `, [userPhone, t.amount, t.type === 'received' ? 'sale' : 'expense',
-                    t.category || 'mpesa',
-                    `M-Pesa: ${t.receipt} - ${t.sender || t.receiver || 'Unknown'}`,
-                    t.date ? t.date.split(' ')[0] : new Date().toISOString().split('T')[0],
-                    t.date || new Date().toISOString()
-                ]);
+                        t.category || 'mpesa',
+                        `M-Pesa: ${t.receipt} - ${t.sender || t.receiver || 'Unknown'}`,
+                        t.date ? t.date.split(' ')[0] : new Date().toISOString().split('T')[0],
+                        t.date || new Date().toISOString()
+                    ]);
                     savedCount++;
                 }
             }
         } finally {
             client.release();
         }
-
-        fs.unlinkSync(filePath);
 
         const period = transactions.length > 0 ?
             `${new Date(transactions[0].date).toLocaleDateString()} - ${new Date(transactions[transactions.length - 1].date).toLocaleDateString()}` :
