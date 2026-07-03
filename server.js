@@ -1,4 +1,4 @@
-// server.js - DukaApp with PostgreSQL for Permanent User Registration
+// server.js - Complete DukaApp Server with M-Pesa Statement Analysis
 const express = require('express');
 const { MessagingResponse } = require('twilio').twiml;
 const path = require('path');
@@ -12,10 +12,9 @@ const app = express();
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false } // Required for Render PostgreSQL
+  ssl: { rejectUnauthorized: false }
 });
 
-// Test database connection
 pool.connect((err, client, release) => {
   if (err) {
     console.error('❌ Database connection error:', err.stack);
@@ -29,7 +28,7 @@ pool.connect((err, client, release) => {
 async function initDatabase() {
   const client = await pool.connect();
   try {
-    // Users table - primary table for all users
+    // Users table
     await client.query(`
       CREATE TABLE IF NOT EXISTS users (
         phone TEXT PRIMARY KEY,
@@ -88,22 +87,7 @@ async function initDatabase() {
       )
     `);
     
-    // Stock transactions table
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS stock_transactions (
-        id SERIAL PRIMARY KEY,
-        phone TEXT NOT NULL,
-        product_id INTEGER,
-        transaction_type TEXT CHECK(transaction_type IN ('add', 'use', 'adjust')),
-        quantity REAL NOT NULL,
-        reason TEXT,
-        previous_quantity REAL,
-        new_quantity REAL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    // Subscribers table - comprehensive tracking
+    // Subscribers table
     await client.query(`
       CREATE TABLE IF NOT EXISTS subscribers (
         id SERIAL PRIMARY KEY,
@@ -120,8 +104,6 @@ async function initDatabase() {
         last_payment_date TIMESTAMP,
         last_payment_amount REAL,
         total_paid REAL DEFAULT 0,
-        cancelled_date TIMESTAMP,
-        cancellation_reason TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
@@ -156,8 +138,6 @@ async function initDatabase() {
         weekly_profit REAL DEFAULT 0,
         monthly_sales REAL DEFAULT 0,
         monthly_profit REAL DEFAULT 0,
-        average_transaction REAL DEFAULT 0,
-        transaction_count INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `);
@@ -254,105 +234,192 @@ function adminAuth(req, res, next) {
 }
 
 // ============================================================
-// POSTGRESQL USER MANAGEMENT FUNCTIONS (PERMANENT)
+// M-PESA STATEMENT PARSING FUNCTIONS
 // ============================================================
 
-async function getUser(phone) {
-  const client = await pool.connect();
-  try {
-    let result = await client.query('SELECT * FROM users WHERE phone = $1', [phone]);
+function parseMpesaStatement(text) {
+    const transactions = [];
+    const lines = text.split('\n');
     
-    if (result.rows.length === 0) {
-      const now = new Date();
-      const trialEndDate = new Date();
-      trialEndDate.setDate(trialEndDate.getDate() + 14);
-      
-      await client.query(`
-        INSERT INTO users (phone, step, trial_start_date, trial_end_date, subscription_status, created_at)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, [phone, 'none', now.toISOString(), trialEndDate.toISOString(), 'trial', now.toISOString()]);
-      
-      result = await client.query('SELECT * FROM users WHERE phone = $1', [phone]);
-      console.log(`🆕 Created new user: ${phone}`);
+    const patterns = {
+        receipt: /(UG|UE|UF|UD|UC|UB|UA|UZ|UY|UX|UW|UV|UU|UT|US|UR|UQ|UP|UO|UN|UM|UL|UK|UJ|UI|UH|UG|UF|UE|UD|UC|UB|UA)[A-Z0-9]{8,10}/i,
+        date: /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/,
+        amount: /Ksh\s*([\d,]+(?:\.\d{2})?)/i,
+        type: /(Received|Sent|Paid|Transferred|Deposit|Withdrawal|M-Pesa|Pay Bill|Lipa Na M-Pesa|Buy Goods|Agent Deposit|Agent Withdrawal|Customer Transfer)/i,
+        sender: /from\s+(.+?)(?:\s+on|$)/i,
+        receiver: /to\s+(.+?)(?:\s+on|$)/i,
+        balance: /balance\s+is\s+Ksh\s*([\d,]+(?:\.\d{2})?)/i,
+        transaction_cost: /charge\s*Ksh\s*([\d,]+(?:\.\d{2})?)/i
+    };
+    
+    let currentTransaction = {};
+    let inTransaction = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        
+        if (!line || line.includes('M-PESA STATEMENT') || line.includes('SUMMARY') || 
+            line.includes('DETAILED STATEMENT') || line.includes('Page')) {
+            continue;
+        }
+        
+        const receiptMatch = line.match(patterns.receipt);
+        if (receiptMatch) {
+            if (Object.keys(currentTransaction).length > 0) {
+                transactions.push(currentTransaction);
+            }
+            currentTransaction = { receipt: receiptMatch[1], raw: line };
+            inTransaction = true;
+            continue;
+        }
+        
+        if (inTransaction) {
+            const dateMatch = line.match(patterns.date);
+            if (dateMatch) {
+                currentTransaction.date = dateMatch[1];
+            }
+            
+            const amountMatch = line.match(patterns.amount);
+            if (amountMatch) {
+                currentTransaction.amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+            }
+            
+            if (line.includes('Received') || line.includes('received from') || 
+                line.includes('Funds received') || line.includes('Deposit of Funds')) {
+                currentTransaction.type = 'received';
+                currentTransaction.category = 'sale';
+            } else if (line.includes('Sent') || line.includes('Transferred to') || 
+                       line.includes('Withdrawal') || line.includes('Agent Withdrawal') ||
+                       line.includes('Pay Bill') || line.includes('Lipa Na M-Pesa') ||
+                       line.includes('Buy Goods') || line.includes('Merchant Payment')) {
+                currentTransaction.type = 'sent';
+                currentTransaction.category = 'expense';
+            } else if (line.includes('OD Loan')) {
+                currentTransaction.type = 'loan';
+                currentTransaction.category = 'loan';
+            } else if (line.includes('Airtime')) {
+                currentTransaction.type = 'airtime';
+                currentTransaction.category = 'expense';
+            } else if (line.includes('Charge')) {
+                currentTransaction.type = 'charge';
+                currentTransaction.category = 'expense';
+            }
+            
+            const senderMatch = line.match(patterns.sender);
+            if (senderMatch) {
+                currentTransaction.sender = senderMatch[1].trim();
+            }
+            
+            const receiverMatch = line.match(patterns.receiver);
+            if (receiverMatch) {
+                currentTransaction.receiver = receiverMatch[1].trim();
+            }
+            
+            const balanceMatch = line.match(patterns.balance);
+            if (balanceMatch) {
+                currentTransaction.balance = parseFloat(balanceMatch[1].replace(/,/g, ''));
+            }
+            
+            const costMatch = line.match(patterns.transaction_cost);
+            if (costMatch) {
+                currentTransaction.cost = parseFloat(costMatch[1].replace(/,/g, ''));
+            }
+        }
+        
+        if (line.includes('Statement Verification Code') || line.includes('For self-help dial')) {
+            if (Object.keys(currentTransaction).length > 0) {
+                transactions.push(currentTransaction);
+                currentTransaction = {};
+                inTransaction = false;
+            }
+        }
     }
     
-    return result.rows[0];
-  } finally {
-    client.release();
-  }
+    if (Object.keys(currentTransaction).length > 0) {
+        transactions.push(currentTransaction);
+    }
+    
+    return transactions;
 }
 
-async function updateUser(phone, updates) {
-  const client = await pool.connect();
-  try {
-    const fields = Object.keys(updates);
-    const values = Object.values(updates);
-    const setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
-    await client.query(`UPDATE users SET ${setClause} WHERE phone = $${fields.length + 1}`, [...values, phone]);
-    console.log(`📝 Updated user ${phone}:`, updates);
-  } finally {
-    client.release();
-  }
+function calculateSummary(transactions) {
+    let totalSales = 0;
+    let totalExpenses = 0;
+    let totalReceived = 0;
+    let totalSent = 0;
+    let totalCharges = 0;
+    let transactionCount = transactions.length;
+    let businessSales = 0;
+    let businessExpenses = 0;
+    
+    const businessKeywords = ['stock', 'supplier', 'wholesale', 'vendor', 'shop', 'duka', 
+                              'business', 'store', 'retail', 'inventory', 'order', 'purchase'];
+    
+    for (const t of transactions) {
+        if (t.type === 'received' || t.category === 'sale') {
+            totalReceived += t.amount || 0;
+            const desc = (t.sender || t.receiver || '').toLowerCase();
+            if (businessKeywords.some(kw => desc.includes(kw))) {
+                businessSales += t.amount || 0;
+            } else {
+                businessSales += t.amount || 0;
+            }
+            totalSales += t.amount || 0;
+        } else if (t.type === 'sent' || t.category === 'expense') {
+            totalSent += t.amount || 0;
+            const desc = (t.receiver || t.sender || '').toLowerCase();
+            if (businessKeywords.some(kw => desc.includes(kw)) || 
+                t.category === 'expense' || t.type === 'expense') {
+                businessExpenses += t.amount || 0;
+            }
+            totalExpenses += t.amount || 0;
+        }
+        
+        if (t.cost) {
+            totalCharges += t.cost;
+        }
+    }
+    
+    return {
+        totalSales,
+        totalExpenses,
+        totalReceived,
+        totalSent,
+        totalCharges,
+        transactionCount,
+        businessSales,
+        businessExpenses,
+        netProfit: totalSales - totalExpenses,
+        businessProfit: businessSales - businessExpenses
+    };
 }
 
-async function getSubscriptionStatus(phone) {
-  const client = await pool.connect();
-  try {
-    const result = await client.query(
-      'SELECT subscription_status, trial_end_date, subscription_end_date FROM users WHERE phone = $1',
-      [phone]
-    );
+function identifyBusinessTransactions(transactions) {
+    const businessKeywords = ['stock', 'supplier', 'wholesale', 'vendor', 'shop', 'duka', 
+                              'business', 'store', 'retail', 'inventory', 'order', 'purchase'];
+    const personalKeywords = ['rent', 'salary', 'food', 'personal', 'family', 'gift', 
+                              'church', 'school', 'medical', 'hospital'];
     
-    if (result.rows.length === 0) return { status: 'no_account' };
-    
-    const user = result.rows[0];
-    
-    if (user.subscription_status === 'trial' && user.trial_end_date) {
-      const daysLeft = Math.ceil((new Date(user.trial_end_date) - new Date()) / (1000 * 60 * 60 * 24));
-      return { status: 'trial', daysLeft: Math.max(0, daysLeft), endDate: user.trial_end_date };
+    for (const t of transactions) {
+        const desc = (t.sender || t.receiver || '').toLowerCase();
+        const isBusiness = businessKeywords.some(kw => desc.includes(kw));
+        const isPersonal = personalKeywords.some(kw => desc.includes(kw));
+        
+        t.isBusiness = isBusiness && !isPersonal;
+        t.isPersonal = isPersonal && !isBusiness;
+        
+        if (!t.isBusiness && !t.isPersonal) {
+            if (t.type === 'received') {
+                t.isBusiness = true;
+                t.isPersonal = false;
+            } else {
+                t.isPersonal = true;
+                t.isBusiness = false;
+            }
+        }
     }
-    if (user.subscription_status === 'active' && user.subscription_end_date) {
-      const daysLeft = Math.ceil((new Date(user.subscription_end_date) - new Date()) / (1000 * 60 * 60 * 24));
-      return { status: 'active', daysLeft: Math.max(0, daysLeft), endDate: user.subscription_end_date };
-    }
-    return { status: user.subscription_status || 'unknown' };
-  } finally {
-    client.release();
-  }
-}
-
-async function recordNewSubscriber(phone, businessName, businessType, location) {
-  const client = await pool.connect();
-  try {
-    const now = new Date();
-    const trialEndDate = new Date();
-    trialEndDate.setDate(trialEndDate.getDate() + 14);
     
-    await client.query(`
-      UPDATE users SET 
-        business_name = $1, business_type = $2, location = $3, 
-        registered = 1, trial_start_date = $4, trial_end_date = $5
-      WHERE phone = $6
-    `, [businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(), phone]);
-    
-    const existing = await client.query('SELECT * FROM subscribers WHERE phone = $1', [phone]);
-    
-    if (existing.rows.length === 0) {
-      await client.query(`
-        INSERT INTO subscribers (
-          phone, business_name, business_type, location, 
-          subscription_status, trial_start_date, trial_end_date,
-          status_history, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, 'trial', $5, $6, $7, $8, $9)
-      `, [phone, businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(),
-          JSON.stringify([{ status: 'trial', date: now.toISOString(), note: 'User registered' }]),
-          now.toISOString(), now.toISOString()]);
-      
-      console.log(`📊 New subscriber permanently recorded: ${phone} - ${businessName}`);
-    }
-  } finally {
-    client.release();
-  }
+    return transactions;
 }
 
 // ============================================================
@@ -469,43 +536,103 @@ async function recordMpesaTransaction(phone, amount, type, description) {
   }
 }
 
-async function recordSale(phone, amount) {
+// ============================================================
+// USER MANAGEMENT FUNCTIONS
+// ============================================================
+
+async function getUser(phone) {
   const client = await pool.connect();
   try {
-    const today = new Date().toISOString().split('T')[0];
-    await client.query(`
-      INSERT INTO transactions (phone, amount, type, description, date, created_at)
-      VALUES ($1, $2, 'sale', $3, $4, $5)
-    `, [phone, amount, `Manual sale: KES ${amount}`, today, new Date().toISOString()]);
-    console.log(`💰 Sale recorded for ${phone}: KES ${amount}`);
+    let result = await client.query('SELECT * FROM users WHERE phone = $1', [phone]);
+    
+    if (result.rows.length === 0) {
+      const now = new Date();
+      const trialEndDate = new Date();
+      trialEndDate.setDate(trialEndDate.getDate() + 14);
+      
+      await client.query(`
+        INSERT INTO users (phone, step, trial_start_date, trial_end_date, subscription_status, created_at)
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `, [phone, 'none', now.toISOString(), trialEndDate.toISOString(), 'trial', now.toISOString()]);
+      
+      result = await client.query('SELECT * FROM users WHERE phone = $1', [phone]);
+      console.log(`🆕 Created new user: ${phone}`);
+    }
+    
+    return result.rows[0];
   } finally {
     client.release();
   }
 }
 
-async function recordExpense(phone, amount, category) {
+async function updateUser(phone, updates) {
   const client = await pool.connect();
   try {
-    const today = new Date().toISOString().split('T')[0];
-    await client.query(`
-      INSERT INTO transactions (phone, amount, type, category, description, date, created_at)
-      VALUES ($1, $2, 'expense', $3, $4, $5, $6)
-    `, [phone, amount, category, `Manual expense: KES ${amount} (${category})`, today, new Date().toISOString()]);
-    console.log(`💸 Expense recorded for ${phone}: KES ${amount} (${category})`);
+    const fields = Object.keys(updates);
+    const values = Object.values(updates);
+    const setClause = fields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+    await client.query(`UPDATE users SET ${setClause} WHERE phone = $${fields.length + 1}`, [...values, phone]);
+    console.log(`📝 Updated user ${phone}:`, updates);
   } finally {
     client.release();
   }
 }
 
-async function recordCashSale(phone, amount) {
+async function getSubscriptionStatus(phone) {
   const client = await pool.connect();
   try {
-    const today = new Date().toISOString().split('T')[0];
+    const result = await client.query(
+      'SELECT subscription_status, trial_end_date, subscription_end_date FROM users WHERE phone = $1',
+      [phone]
+    );
+    
+    if (result.rows.length === 0) return { status: 'no_account' };
+    
+    const user = result.rows[0];
+    
+    if (user.subscription_status === 'trial' && user.trial_end_date) {
+      const daysLeft = Math.ceil((new Date(user.trial_end_date) - new Date()) / (1000 * 60 * 60 * 24));
+      return { status: 'trial', daysLeft: Math.max(0, daysLeft), endDate: user.trial_end_date };
+    }
+    if (user.subscription_status === 'active' && user.subscription_end_date) {
+      const daysLeft = Math.ceil((new Date(user.subscription_end_date) - new Date()) / (1000 * 60 * 60 * 24));
+      return { status: 'active', daysLeft: Math.max(0, daysLeft), endDate: user.subscription_end_date };
+    }
+    return { status: user.subscription_status || 'unknown' };
+  } finally {
+    client.release();
+  }
+}
+
+async function recordNewSubscriber(phone, businessName, businessType, location) {
+  const client = await pool.connect();
+  try {
+    const now = new Date();
+    const trialEndDate = new Date();
+    trialEndDate.setDate(trialEndDate.getDate() + 14);
+    
     await client.query(`
-      INSERT INTO transactions (phone, amount, type, description, date, created_at)
-      VALUES ($1, $2, 'cash_sale', $3, $4, $5)
-    `, [phone, amount, `Cash sale: KES ${amount}`, today, new Date().toISOString()]);
-    console.log(`💵 Cash sale recorded for ${phone}: KES ${amount}`);
+      UPDATE users SET 
+        business_name = $1, business_type = $2, location = $3, 
+        registered = 1, trial_start_date = $4, trial_end_date = $5
+      WHERE phone = $6
+    `, [businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(), phone]);
+    
+    const existing = await client.query('SELECT * FROM subscribers WHERE phone = $1', [phone]);
+    
+    if (existing.rows.length === 0) {
+      await client.query(`
+        INSERT INTO subscribers (
+          phone, business_name, business_type, location, 
+          subscription_status, trial_start_date, trial_end_date,
+          status_history, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, 'trial', $5, $6, $7, $8, $9)
+      `, [phone, businessName, businessType, location, now.toISOString(), trialEndDate.toISOString(),
+          JSON.stringify([{ status: 'trial', date: now.toISOString(), note: 'User registered' }]),
+          now.toISOString(), now.toISOString()]);
+      
+      console.log(`📊 New subscriber permanently recorded: ${phone} - ${businessName}`);
+    }
   } finally {
     client.release();
   }
@@ -553,10 +680,6 @@ async function calculateLoanEligibility(phone) {
     eligibleAmount = 20000;
     interestRate = 12;
     repaymentMonths = 3;
-  } else if (creditScore >= 20) {
-    eligibleAmount = 5000;
-    interestRate = 13;
-    repaymentMonths = 2;
   } else {
     eligibleAmount = 0;
     interestRate = 15;
@@ -567,63 +690,6 @@ async function calculateLoanEligibility(phone) {
     creditScore, eligibleAmount, interestRate, repaymentMonths,
     recommendation: creditScore >= 50 ? 'Eligible' : 'Building Credit'
   };
-}
-
-// ============================================================
-// STOCK MANAGEMENT FUNCTIONS
-// ============================================================
-
-async function addStock(phone, productName, quantity) {
-  const client = await pool.connect();
-  try {
-    const existing = await client.query('SELECT * FROM stock_products WHERE phone = $1 AND product_name = $2', [phone, productName]);
-    
-    if (existing.rows.length > 0) {
-      const newQuantity = existing.rows[0].quantity + quantity;
-      await client.query('UPDATE stock_products SET quantity = $1, updated_at = NOW() WHERE phone = $2 AND product_name = $3', 
-        [newQuantity, phone, productName]);
-      return { success: true, product: productName, oldQty: existing.rows[0].quantity, newQty: newQuantity };
-    } else {
-      await client.query('INSERT INTO stock_products (phone, product_name, quantity) VALUES ($1, $2, $3)', 
-        [phone, productName, quantity]);
-      return { success: true, product: productName, newQty: quantity, isNew: true };
-    }
-  } finally {
-    client.release();
-  }
-}
-
-async function useStock(phone, productName, quantity) {
-  const client = await pool.connect();
-  try {
-    const product = await client.query('SELECT * FROM stock_products WHERE phone = $1 AND product_name = $2', [phone, productName]);
-    
-    if (product.rows.length === 0) {
-      return { success: false, error: `Product "${productName}" not found` };
-    }
-    
-    if (product.rows[0].quantity < quantity) {
-      return { success: false, error: `Insufficient stock. Available: ${product.rows[0].quantity}` };
-    }
-    
-    const newQuantity = product.rows[0].quantity - quantity;
-    await client.query('UPDATE stock_products SET quantity = $1, updated_at = NOW() WHERE phone = $2 AND product_name = $3', 
-      [newQuantity, phone, productName]);
-    
-    return { success: true, product: productName, usedQty: quantity, remainingQty: newQuantity };
-  } finally {
-    client.release();
-  }
-}
-
-async function listStock(phone) {
-  const client = await pool.connect();
-  try {
-    const result = await client.query('SELECT product_name, quantity, unit FROM stock_products WHERE phone = $1 ORDER BY product_name', [phone]);
-    return result.rows;
-  } finally {
-    client.release();
-  }
 }
 
 // ============================================================
@@ -676,7 +742,7 @@ app.post('/mpesa-callback', async (req, res) => {
 });
 
 // ============================================================
-// WHATSAPP WEBHOOK - MAIN HANDLER WITH PERMANENT REGISTRATION
+// WHATSAPP WEBHOOK - MAIN HANDLER
 // ============================================================
 
 app.post('/whatsapp', async (req, res) => {
@@ -687,22 +753,193 @@ app.post('/whatsapp', async (req, res) => {
   
   console.log(`📩 Message from ${userPhone}: "${incomingMsg.substring(0, 100)}"`);
   
-  // Get user from PostgreSQL (PERMANENT)
   let user = await getUser(userPhone);
   const subscription = await getSubscriptionStatus(userPhone);
   
   console.log(`🔍 User status: registered=${user.registered}, step=${user.step}, name=${user.business_name || 'none'}`);
   
-  // M-PESA AUTO-DETECTION
+  // ============================================================
+  // M-PESA STATEMENT ANALYSIS - Check if this is a statement text
+  // ============================================================
+  
+  if (incomingMsg.length > 500 && (incomingMsg.includes('Receipt No.') || 
+                                   incomingMsg.includes('UG') || 
+                                   incomingMsg.includes('Ksh') ||
+                                   incomingMsg.includes('M-PESA'))) {
+    twiml.message(`📊 *Processing your M-Pesa statement...*
+
+This may take a moment.
+
+Parsing ${incomingMsg.split('\n').length} lines...`);
+    
+    const transactions = parseMpesaStatement(incomingMsg);
+    
+    if (transactions.length === 0) {
+      twiml.message(`❌ *Could not parse statement*
+
+I couldn't identify any transactions in the text you sent.
+
+Please make sure you:
+1. Copy the FULL statement including all transactions
+2. Include the receipt numbers (e.g., UG209A...)
+3. Send as plain text
+
+Try again or send "UPLOAD" for help.`);
+      res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
+    }
+    
+    const classified = identifyBusinessTransactions(transactions);
+    const summary = calculateSummary(transactions);
+    
+    const client = await pool.connect();
+    try {
+      let savedCount = 0;
+      for (const t of transactions) {
+        if (t.amount && t.date) {
+          await client.query(`
+            INSERT INTO transactions (phone, amount, type, category, description, date, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+          `, [userPhone, t.amount, t.type === 'received' ? 'sale' : 'expense', 
+              t.category || 'mpesa', 
+              `M-Pesa: ${t.receipt} - ${t.sender || t.receiver || 'Unknown'}`, 
+              t.date ? t.date.split(' ')[0] : new Date().toISOString().split('T')[0],
+              t.date || new Date().toISOString()]);
+          savedCount++;
+        }
+      }
+      
+      twiml.message(`✅ *Analysis Complete!*
+
+━━━━━━━━━━━━━━━━━━━━
+📊 *SUMMARY*
+━━━━━━━━━━━━━━━━━━━━
+📅 Period: ${transactions.length > 0 ? new Date(transactions[0].date).toLocaleDateString() : 'N/A'} - ${transactions.length > 0 ? new Date(transactions[transactions.length-1].date).toLocaleDateString() : 'N/A'}
+📝 Transactions: ${transactions.length}
+💾 Saved to database: ${savedCount}
+━━━━━━━━━━━━━━━━━━━━
+💰 *Total Received:* KES ${summary.totalReceived.toFixed(2)}
+💸 *Total Sent:* KES ${summary.totalSent.toFixed(2)}
+📈 *Net:* KES ${(summary.totalReceived - summary.totalSent).toFixed(2)}
+━━━━━━━━━━━━━━━━━━━━
+🏪 *Business Transactions*
+━━━━━━━━━━━━━━━━━━━━
+💰 Business Sales: KES ${summary.businessSales.toFixed(2)}
+💸 Business Expenses: KES ${summary.businessExpenses.toFixed(2)}
+📈 Business Profit: KES ${summary.businessProfit.toFixed(2)}
+━━━━━━━━━━━━━━━━━━━━
+
+Type *PROFIT* to see your daily profit.
+Type *REPORT* for a detailed breakdown.
+
+Your statement has been saved! 🚀`);
+    } finally {
+      client.release();
+    }
+    res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
+  }
+  
+  // ============================================================
+  // STATEMENT UPLOAD COMMANDS
+  // ============================================================
+  
+  if (incomingMsgLower.startsWith('upload') || incomingMsgLower === 'statement') {
+    twiml.message(`📊 *Upload Your M-Pesa Statement*
+
+You can upload your M-Pesa statement in two ways:
+
+1️⃣ *Send the statement text* - Copy the transaction details and paste them here
+
+2️⃣ *Forward the email* - Forward your M-Pesa statement email to this WhatsApp
+
+*What I'll do:*
+✅ Parse all transactions
+✅ Calculate your sales and expenses
+✅ Identify business vs personal transactions
+✅ Show your profit summary
+
+*To get started:*
+• Send your M-Pesa statement text
+• Or type "ANALYZE" to analyze your existing transactions
+
+*Note:* Your data is safe and only used for analysis.`);
+    res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
+  }
+  
+  // ANALYZE EXISTING TRANSACTIONS
+  if (incomingMsgLower === 'analyze') {
+    const client = await pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT * FROM transactions WHERE phone = $1 ORDER BY date DESC`,
+        [userPhone]
+      );
+      
+      if (result.rows.length === 0) {
+        twiml.message(`📊 *No transactions found*
+
+You have no transactions recorded.
+
+To get started:
+• Upload a statement: send "UPLOAD"
+• Or start tracking manually: SALE 1500
+
+Your data will be analyzed automatically!`);
+        return;
+      }
+      
+      let totalSales = 0, totalExpenses = 0;
+      for (const t of result.rows) {
+        if (t.type === 'sale' || t.type === 'cash_sale') {
+          totalSales += t.amount;
+        } else if (t.type === 'expense') {
+          totalExpenses += t.amount;
+        }
+      }
+      
+      const profit = totalSales - totalExpenses;
+      const days = Math.ceil((new Date() - new Date(result.rows[0].created_at)) / (1000 * 60 * 60 * 24));
+      
+      twiml.message(`📊 *BUSINESS ANALYSIS REPORT*
+
+━━━━━━━━━━━━━━━━━━━━
+💰 *Total Sales:* KES ${totalSales.toFixed(2)}
+💸 *Total Expenses:* KES ${totalExpenses.toFixed(2)}
+📈 *Net Profit:* KES ${profit.toFixed(2)}
+━━━━━━━━━━━━━━━━━━━━
+📅 *Days Tracked:* ${days}
+📊 *Daily Average:* KES ${(profit/days).toFixed(2)}
+
+*Upload a full M-Pesa statement for a complete analysis!*
+
+Send "UPLOAD" to get started. 🚀`);
+    } finally {
+      client.release();
+    }
+    res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
+  }
+  
+  // M-PESA AUTO-DETECTION (for short messages)
   if (isMpesaMessage(incomingMsg) && user.registered === 1) {
     const parsed = parseMpesaMessage(incomingMsg);
     if (parsed.amount && parsed.amount > 0) {
-      if (parsed.isReceived) {
-        await recordMpesaTransaction(userPhone, parsed.amount, 'sale', `Received from ${parsed.sender || 'customer'}`);
-        twiml.message(`✅ *M-Pesa Sale Auto-Recorded!*\n\n💰 Amount: KES ${parsed.amount.toFixed(2)}\n📊 From: ${parsed.sender || 'Customer'}\n\nType *PROFIT* for full report.`);
-      } else {
-        await recordMpesaTransaction(userPhone, parsed.amount, 'expense', `Paid to ${parsed.receiver || 'supplier'}`);
-        twiml.message(`✅ *M-Pesa Expense Auto-Recorded!*\n\n💸 Amount: KES ${parsed.amount.toFixed(2)}\n📊 Paid to: ${parsed.receiver || 'Vendor'}\n\nType *PROFIT* for full report.`);
+      const client = await pool.connect();
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        if (parsed.isReceived) {
+          await client.query(`
+            INSERT INTO transactions (phone, amount, type, description, date, created_at)
+            VALUES ($1, $2, 'sale', $3, $4, $5)
+          `, [userPhone, parsed.amount, `Received from ${parsed.sender || 'customer'}`, today, new Date().toISOString()]);
+          twiml.message(`✅ *M-Pesa Sale Auto-Recorded!*\n\n💰 Amount: KES ${parsed.amount.toFixed(2)}\n📊 From: ${parsed.sender || 'Customer'}\n\nType *PROFIT* for full report.`);
+        } else {
+          await client.query(`
+            INSERT INTO transactions (phone, amount, type, description, date, created_at)
+            VALUES ($1, $2, 'expense', $3, $4, $5)
+          `, [userPhone, parsed.amount, `Paid to ${parsed.receiver || 'supplier'}`, today, new Date().toISOString()]);
+          twiml.message(`✅ *M-Pesa Expense Auto-Recorded!*\n\n💸 Amount: KES ${parsed.amount.toFixed(2)}\n📊 Paid to: ${parsed.receiver || 'Vendor'}\n\nType *PROFIT* for full report.`);
+        }
+      } finally {
+        client.release();
       }
       res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
     }
@@ -727,92 +964,89 @@ app.post('/whatsapp', async (req, res) => {
   }
   
   // ============================================================
-  // REGISTERED USER COMMANDS (PERMANENT - NEVER ASKS TO REGISTER AGAIN)
+  // REGISTERED USER COMMANDS
   // ============================================================
   
   if (user.registered === 1) {
     console.log(`✅ User IS registered: ${user.business_name}`);
     
-    // LOAN CHECK COMMAND
-    if (incomingMsgLower.startsWith('loan check')) {
-      const eligibility = await calculateLoanEligibility(userPhone);
-      const userRecord = await pool.connect();
-      let daysActive = 0;
-      try {
-        const result = await userRecord.query('SELECT created_at FROM users WHERE phone = $1', [userPhone]);
-        if (result.rows.length > 0) {
-          daysActive = Math.ceil((new Date() - new Date(result.rows[0].created_at)) / (1000 * 60 * 60 * 24));
+    // LOAN COMMANDS
+    if (incomingMsgLower.startsWith('loan')) {
+      const parts = incomingMsgLower.split(' ');
+      const action = parts[1];
+      
+      if (action === 'check' || !action) {
+        const eligibility = await calculateLoanEligibility(userPhone);
+        twiml.message(`🏦 *Your Credit Score & Loan Eligibility*\n\n━━━━━━━━━━━━━━━━━━━━\n📊 Credit Score: ${eligibility.creditScore}/100\n━━━━━━━━━━━━━━━━━━━━\n${eligibility.recommendation === 'Eligible' ? '✅ You are ELIGIBLE for a loan!' : '📈 Keep tracking your sales to build credit'}\n\n💰 Estimated Loan Amount: KES ${eligibility.eligibleAmount.toLocaleString()}\n📉 Interest Rate: ${eligibility.interestRate}% flat\n📅 Repayment Period: ${eligibility.repaymentMonths} months\n💵 Monthly Installment: KES ${Math.round(eligibility.eligibleAmount * (1 + eligibility.interestRate/100) / eligibility.repaymentMonths).toLocaleString()}\n\n━━━━━━━━━━━━━━━━━━━━\nTo apply for a loan, reply: *LOAN APPLY*\n\n*Note:* Higher credit score = better loan terms. Track your daily sales to improve your score!`);
+      }
+      else if (action === 'apply') {
+        const eligibility = await calculateLoanEligibility(userPhone);
+        if (eligibility.creditScore < 50) {
+          twiml.message(`❌ *Loan Application Not Approved*\n\nYour credit score (${eligibility.creditScore}/100) is below our minimum requirement.\n\n*How to improve:*\n• Record all your sales daily\n• Use DukaApp consistently for 30+ days\n\nKeep using DukaApp and check again in 2 weeks!`);
+        } else {
+          const client = await pool.connect();
+          try {
+            await client.query(`
+              INSERT INTO loan_applications (phone, business_name, business_type, business_location, loan_amount, status, credit_score, eligibility, application_date)
+              VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
+            `, [userPhone, user.business_name, user.business_type, user.location, eligibility.eligibleAmount, eligibility.creditScore, eligibility.recommendation, new Date().toISOString()]);
+            twiml.message(`✅ *Loan Application Submitted!*\n\n📊 Credit Score: ${eligibility.creditScore}/100\n💰 Requested Amount: KES ${eligibility.eligibleAmount.toLocaleString()}\n\n⏰ We will contact you within 24-48 hours with loan offers.\n\nReply *CONSENT YES* to share your data with lenders.`);
+          } finally {
+            client.release();
+          }
         }
-      } finally {
-        userRecord.release();
       }
-      
-      let buildCreditMessage = '';
-      if (eligibility.creditScore < 20) {
-        buildCreditMessage = `📈 *How to Build Your Credit Score*\n\nYou currently have ${eligibility.creditScore}/100.\n\n✅ Track your sales daily\n✅ Track your expenses\n✅ Forward M-Pesa messages\n✅ Be consistent for 30-90 days\n\n*The longer you use DukaApp, the higher your credit score!*\n\n📅 Days active: ${daysActive}\n🎯 Target: 30+ days for loans`;
-      } else {
-        buildCreditMessage = `🎉 *Great progress!*\n\nCredit Score: ${eligibility.creditScore}/100\n✅ Keep tracking to increase your limit`;
-      }
-      
-      twiml.message(`🏦 *Your Credit Score & Loan Eligibility*\n\n━━━━━━━━━━━━━━━━━━━━\n📊 Credit Score: ${eligibility.creditScore}/100\n━━━━━━━━━━━━━━━━━━━━\n\n💰 Estimated Loan Amount: KES ${eligibility.eligibleAmount.toLocaleString()}\n📉 Interest Rate: ${eligibility.interestRate}% flat\n📅 Repayment Period: ${eligibility.repaymentMonths} months\n\n━━━━━━━━━━━━━━━━━━━━\n${buildCreditMessage}\n━━━━━━━━━━━━━━━━━━━━\n\nTo apply for a loan, reply: *LOAN APPLY*`);
-    }
-    // LOAN APPLY COMMAND
-    else if (incomingMsgLower.startsWith('loan apply')) {
-      const eligibility = await calculateLoanEligibility(userPhone);
-      if (eligibility.creditScore < 50) {
-        twiml.message(`❌ *Loan Application Not Approved*\n\nYour credit score (${eligibility.creditScore}/100) is below our minimum requirement.\n\n*How to improve:*\n• Record all your sales daily\n• Use DukaApp consistently for 30+ days\n\nKeep using DukaApp and check again in 2 weeks!`);
-      } else {
+      else if (action === 'consent' && parts[2] === 'yes') {
         const client = await pool.connect();
         try {
           await client.query(`
-            INSERT INTO loan_applications (phone, business_name, business_type, business_location, loan_amount, status, credit_score, eligibility, application_date)
-            VALUES ($1, $2, $3, $4, $5, 'pending', $6, $7, $8)
-          `, [userPhone, user.business_name, user.business_type, user.location, eligibility.eligibleAmount, eligibility.creditScore, eligibility.recommendation, new Date().toISOString()]);
-          twiml.message(`✅ *Loan Application Submitted!*\n\n📊 Credit Score: ${eligibility.creditScore}/100\n💰 Requested Amount: KES ${eligibility.eligibleAmount.toLocaleString()}\n\n⏰ We will contact you within 24-48 hours with loan offers.\n\nReply *CONSENT YES* to share your data with lenders.`);
+            INSERT INTO customer_consent (phone, consent_type, consent_given, consent_date, purpose)
+            VALUES ($1, 'data_sharing', 1, $2, 'Loan application processing')
+          `, [userPhone, new Date().toISOString()]);
+          twiml.message(`✅ *Thank you for your consent!*\n\nYour business data will now be shared with partner lenders.\n\nWe will contact you with loan offers within 24 hours.\n\nType *LOAN STATUS* to check your application status.`);
         } finally {
           client.release();
         }
       }
-    }
-    // CONSENT YES COMMAND
-    else if (incomingMsgLower.startsWith('consent yes')) {
-      const client = await pool.connect();
-      try {
-        await client.query(`
-          INSERT INTO customer_consent (phone, consent_type, consent_given, consent_date, purpose)
-          VALUES ($1, 'data_sharing', 1, $2, 'Loan application processing')
-        `, [userPhone, new Date().toISOString()]);
-        twiml.message(`✅ *Thank you for your consent!*\n\nYour business data will now be shared with partner lenders.\n\nWe will contact you with loan offers within 24 hours.\n\nType *LOAN STATUS* to check your application status.`);
-      } finally {
-        client.release();
-      }
-    }
-    // LOAN STATUS COMMAND
-    else if (incomingMsgLower.startsWith('loan status')) {
-      const client = await pool.connect();
-      try {
-        const result = await client.query(`
-          SELECT * FROM loan_applications WHERE phone = $1 ORDER BY application_date DESC LIMIT 1
-        `, [userPhone]);
-        
-        if (result.rows.length === 0) {
-          twiml.message(`📋 *No loan application found*\n\nTo apply, type: *LOAN APPLY*`);
-        } else {
-          const app = result.rows[0];
-          twiml.message(`🏦 *Loan Application Status*\n\n━━━━━━━━━━━━━━━━━━━━\n📅 Date: ${new Date(app.application_date).toLocaleDateString()}\n💰 Amount: KES ${app.loan_amount.toLocaleString()}\n📊 Credit Score: ${app.credit_score}/100\n📈 Status: ${app.status.toUpperCase()}\n━━━━━━━━━━━━━━━━━━━━\n\nWe will contact you within 24 hours.`);
+      else if (action === 'status') {
+        const client = await pool.connect();
+        try {
+          const result = await client.query(`
+            SELECT * FROM loan_applications WHERE phone = $1 ORDER BY application_date DESC LIMIT 1
+          `, [userPhone]);
+          
+          if (result.rows.length === 0) {
+            twiml.message(`📋 *No loan application found*\n\nTo apply, type: *LOAN APPLY*`);
+          } else {
+            const app = result.rows[0];
+            twiml.message(`🏦 *Loan Application Status*\n\n━━━━━━━━━━━━━━━━━━━━\n📅 Date: ${new Date(app.application_date).toLocaleDateString()}\n💰 Amount: KES ${app.loan_amount.toLocaleString()}\n📊 Credit Score: ${app.credit_score}/100\n📈 Status: ${app.status.toUpperCase()}\n━━━━━━━━━━━━━━━━━━━━\n\nWe will contact you within 24 hours.`);
+          }
+        } finally {
+          client.release();
         }
-      } finally {
-        client.release();
       }
+      else if (action === 'help') {
+        twiml.message(`🏦 *DukaApp Loan Services*\n\n━━━━━━━━━━━━━━━━━━━━\n📊 *Check your eligibility*\nType: LOAN CHECK\n\n📝 *Apply for a loan*\nType: LOAN APPLY\n\n📋 *Check application status*\nType: LOAN STATUS\n\n🔒 *Share data with lenders*\nType: CONSENT YES\n━━━━━━━━━━━━━━━━━━━━\n\n*Requirements:*\n• 30+ days of transaction history\n• Consistent daily sales\n\n*Your transaction data helps you get better loan terms!* 🚀`);
+      }
+      res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
     }
+    
     // HELP COMMAND
-    else if (incomingMsgLower === 'help') {
-      twiml.message(`📖 *DUKAAPP COMMANDS*\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *Sales & Expenses*\n━━━━━━━━━━━━━━━━━━━━\n• sale [amount]\n• expense [amount] [category]\n• cash [amount]\n\n📦 *Stock Management*\n━━━━━━━━━━━━━━━━━━━━\n• stock [product]\n• addstock [product] [qty]\n• usestock [product] [qty]\n• liststock\n• lowstock\n\n📊 *Reports*\n━━━━━━━━━━━━━━━━━━━━\n• profit - Today's profit\n• status - Business info\n\n💳 *Subscription*\n━━━━━━━━━━━━━━━━━━━━\n• pay now - KES 299/month\n\n🏦 *Loans & Credit*\n━━━━━━━━━━━━━━━━━━━━\n• loan check - Credit score\n• loan apply - Apply for loan\n• loan status - Check application\n• consent yes - Share data\n\n🤖 *M-Pesa Auto-Record*\nJust forward M-Pesa messages!\n\nExamples: sale 1500, addstock sugar 50, profit, pay now`);
+    if (incomingMsgLower === 'help') {
+      let subInfo = subscription.status === 'trial' ? `\n🎟️ *Trial: ${subscription.daysLeft} days remaining*` : subscription.status === 'active' ? `\n✅ *Active: ${subscription.daysLeft} days remaining*` : '';
+      twiml.message(`📖 *DUKAAPP COMMANDS*${subInfo}\n\n━━━━━━━━━━━━━━━━━━━━\n💰 *Sales & Expenses*\n━━━━━━━━━━━━━━━━━━━━\n• sale [amount]\n• expense [amount] [category]\n• cash [amount]\n\n📦 *Stock Management*\n━━━━━━━━━━━━━━━━━━━━\n• stock [product]\n• addstock [product] [qty]\n• usestock [product] [qty]\n• liststock\n• lowstock\n\n📊 *Reports & Analysis*\n━━━━━━━━━━━━━━━━━━━━\n• profit - Today's profit\n• status - Business info\n• UPLOAD - Upload M-Pesa statement\n• ANALYZE - Analyze transactions\n\n💳 *Subscription*\n━━━━━━━━━━━━━━━━━━━━\n• pay now - KES 299/month\n\n🏦 *Loans & Credit*\n━━━━━━━━━━━━━━━━━━━━\n• loan check - Credit score\n• loan apply - Apply for loan\n\n🤖 *M-Pesa Auto-Record*\nJust forward M-Pesa messages!\n\nExamples: sale 1500, addstock sugar 50, upload, profit`);
     }
     // STATUS COMMAND
     else if (incomingMsgLower === 'status') {
-      const stock = await listStock(userPhone);
-      twiml.message(`📋 *BUSINESS STATUS*\n\n🏪 Business: ${user.business_name}\n📂 Type: ${user.business_type}\n📍 Location: ${user.location}\n\n📦 Products in stock: ${stock.length}\n\nType *help* for all commands.`);
+      const client = await pool.connect();
+      try {
+        const stock = await client.query('SELECT * FROM stock_products WHERE phone = $1', [userPhone]);
+        const txns = await client.query('SELECT COUNT(*) as count FROM transactions WHERE phone = $1', [userPhone]);
+        
+        twiml.message(`📋 *BUSINESS STATUS*\n\n🏪 Business: ${user.business_name}\n📂 Type: ${user.business_type}\n📍 Location: ${user.location}\n\n📦 Products in stock: ${stock.rows.length}\n📝 Transactions logged: ${txns.rows[0]?.count || 0}\n\nType *help* for all commands.`);
+      } finally {
+        client.release();
+      }
     }
     // PROFIT COMMAND
     else if (incomingMsgLower === 'profit') {
@@ -840,9 +1074,19 @@ app.post('/whatsapp', async (req, res) => {
         if (isNaN(quantity) || quantity <= 0) {
           twiml.message(`❌ Invalid quantity. Enter a valid number.`);
         } else {
-          const result = await addStock(userPhone, productName, quantity);
-          if (result.success) {
-            twiml.message(`✅ ${result.isNew ? 'New product added!' : 'Stock updated!'}\n\n📦 ${productName}: ${result.isNew ? result.newQty : `${result.oldQty} → ${result.newQty}`} units`);
+          const client = await pool.connect();
+          try {
+            const existing = await client.query('SELECT * FROM stock_products WHERE phone = $1 AND product_name = $2', [userPhone, productName]);
+            if (existing.rows.length > 0) {
+              const newQuantity = existing.rows[0].quantity + quantity;
+              await client.query('UPDATE stock_products SET quantity = $1, updated_at = NOW() WHERE phone = $2 AND product_name = $3', [newQuantity, userPhone, productName]);
+              twiml.message(`✅ *Stock updated!*\n\n📦 ${productName}: ${existing.rows[0].quantity} → ${newQuantity} units`);
+            } else {
+              await client.query('INSERT INTO stock_products (phone, product_name, quantity) VALUES ($1, $2, $3)', [userPhone, productName, quantity]);
+              twiml.message(`✅ *New product added!*\n\n📦 ${productName}: ${quantity} units`);
+            }
+          } finally {
+            client.release();
           }
         }
       }
@@ -857,26 +1101,40 @@ app.post('/whatsapp', async (req, res) => {
         if (isNaN(quantity) || quantity <= 0) {
           twiml.message(`❌ Invalid quantity.`);
         } else {
-          const result = await useStock(userPhone, productName, quantity);
-          if (result.success) {
-            twiml.message(`✅ *Stock used!*\n\n📦 ${result.product}: Used ${result.usedQty} units\n📊 Remaining: ${result.remainingQty} units`);
-          } else {
-            twiml.message(`❌ ${result.error}`);
+          const client = await pool.connect();
+          try {
+            const product = await client.query('SELECT * FROM stock_products WHERE phone = $1 AND product_name = $2', [userPhone, productName]);
+            if (product.rows.length === 0) {
+              twiml.message(`❌ Product "${productName}" not found.`);
+            } else if (product.rows[0].quantity < quantity) {
+              twiml.message(`❌ Insufficient stock. Available: ${product.rows[0].quantity}`);
+            } else {
+              const newQuantity = product.rows[0].quantity - quantity;
+              await client.query('UPDATE stock_products SET quantity = $1, updated_at = NOW() WHERE phone = $2 AND product_name = $3', [newQuantity, userPhone, productName]);
+              twiml.message(`✅ *Stock used!*\n\n📦 ${productName}: ${product.rows[0].quantity} → ${newQuantity} units`);
+            }
+          } finally {
+            client.release();
           }
         }
       }
     }
     else if (incomingMsgLower === 'liststock') {
-      const products = await listStock(userPhone);
-      if (products.length === 0) {
-        twiml.message(`📦 *No products in inventory*\n\nAdd products with: addstock [product] [quantity]`);
-      } else {
-        let stockList = `📦 *COMPLETE INVENTORY*\n\n`;
-        for (const p of products) {
-          stockList += `• *${p.product_name}*: ${p.quantity} ${p.unit}\n`;
+      const client = await pool.connect();
+      try {
+        const result = await client.query('SELECT product_name, quantity, unit FROM stock_products WHERE phone = $1 ORDER BY product_name', [userPhone]);
+        if (result.rows.length === 0) {
+          twiml.message(`📦 *No products in inventory*\n\nAdd products with: addstock [product] [quantity]`);
+        } else {
+          let stockList = `📦 *COMPLETE INVENTORY*\n\n`;
+          for (const p of result.rows) {
+            stockList += `• *${p.product_name}*: ${p.quantity} ${p.unit}\n`;
+          }
+          stockList += `\nTotal: ${result.rows.length} products`;
+          twiml.message(stockList);
         }
-        stockList += `\nTotal: ${products.length} products`;
-        twiml.message(stockList);
+      } finally {
+        client.release();
       }
     }
     else if (incomingMsgLower === 'lowstock') {
@@ -886,7 +1144,6 @@ app.post('/whatsapp', async (req, res) => {
           SELECT product_name, quantity, unit, reorder_level 
           FROM stock_products WHERE phone = $1 AND quantity <= reorder_level ORDER BY quantity ASC
         `, [userPhone]);
-        
         if (result.rows.length === 0) {
           twiml.message(`✅ *No low stock items*\n\nAll products are well stocked.`);
         } else {
@@ -901,10 +1158,16 @@ app.post('/whatsapp', async (req, res) => {
         client.release();
       }
     }
+    // FINANCIAL COMMANDS
     else if (incomingMsgLower.startsWith('sale')) {
       const amount = incomingMsgLower.split(' ')[1];
       if (amount && !isNaN(amount)) {
-        await recordSale(userPhone, parseFloat(amount));
+        const client = await pool.connect();
+        try {
+          await client.query(`INSERT INTO transactions (phone, amount, type) VALUES ($1, $2, 'sale')`, [userPhone, amount]);
+        } finally {
+          client.release();
+        }
         twiml.message(`✅ *Sale Recorded!* KES ${amount}`);
       } else {
         twiml.message(`📊 *Record a Sale*\n\nType: sale [amount]\nExample: sale 1500`);
@@ -915,7 +1178,12 @@ app.post('/whatsapp', async (req, res) => {
       const amount = parts[1];
       const category = parts[2] || 'general';
       if (amount && !isNaN(amount)) {
-        await recordExpense(userPhone, parseFloat(amount), category);
+        const client = await pool.connect();
+        try {
+          await client.query(`INSERT INTO transactions (phone, amount, type, category) VALUES ($1, $2, 'expense', $3)`, [userPhone, amount, category]);
+        } finally {
+          client.release();
+        }
         twiml.message(`✅ *Expense Recorded!* KES ${amount} (${category})`);
       } else {
         twiml.message(`💸 *Record an Expense*\n\nType: expense [amount] [category]\nExample: expense 500 rent`);
@@ -924,17 +1192,22 @@ app.post('/whatsapp', async (req, res) => {
     else if (incomingMsgLower.startsWith('cash')) {
       const amount = incomingMsgLower.split(' ')[1];
       if (amount && !isNaN(amount)) {
-        await recordCashSale(userPhone, parseFloat(amount));
+        const client = await pool.connect();
+        try {
+          await client.query(`INSERT INTO transactions (phone, amount, type) VALUES ($1, $2, 'cash_sale')`, [userPhone, amount]);
+        } finally {
+          client.release();
+        }
         twiml.message(`✅ *Cash Sale Recorded!* KES ${amount}`);
       } else {
         twiml.message(`💵 *Record a Cash Sale*\n\nType: cash [amount]\nExample: cash 1000`);
       }
     }
     else if (incomingMsgLower === 'agent') {
-      twiml.message(`🤝 *Become a DukaApp Agent*\n\n• KES 200 per shop you sign up\n• 10% recurring commission\n\nSign up: https://dukaapp.online/agent-signup`);
+      twiml.message(`🤝 *Become a DukaApp Agent*\n\n• KES 200 per shop you sign up\n• 10% recurring commission\n\nStart here: https://dukaapp.online/agent-signup`);
     }
     else {
-      twiml.message(`❌ Command not recognized.\n\nType *help* to see all commands.\n\nExamples:\n• sale 1500\n• addstock sugar 50\n• profit\n• loan check`);
+      twiml.message(`❌ Command not recognized.\n\nType *help* to see all commands.\n\nExamples:\n• sale 1500\n• addstock sugar 50\n• profit\n• upload`);
     }
     
     res.set('Content-Type', 'text/xml'); res.send(twiml.toString()); return;
@@ -956,7 +1229,7 @@ app.post('/whatsapp', async (req, res) => {
     await updateUser(userPhone, { location: incomingMsg, registered: 1, step: 'none' });
     await recordNewSubscriber(userPhone, user.business_name, user.business_type, incomingMsg);
     
-    twiml.message(`✅ *Registration Complete!* ✅\n\n🎉 Welcome to DukaApp, ${user.business_name}!\n\nBusiness: ${user.business_type}\nLocation: ${user.location}\n\n━━━━━━━━━━━━━━━━━━━━\n*QUICK START GUIDE*\n━━━━━━━━━━━━━━━━━━━━\n\n💰 *SALE 1000* - Record a sale\n💸 *EXPENSE 500* - Record an expense\n💵 *CASH 1000* - Record a cash sale\n📊 *PROFIT* - View your profit\n📋 *STATUS* - Check your info\n\n📦 *Stock Management*\n• addstock sugar 50 - Add stock\n• usestock sugar 5 - Use stock\n• liststock - View all\n\n💳 *Subscription*\nYou have a *14-day free trial*!\nAfter trial: KES 299/month\nReply *PAY NOW* to subscribe early\n\n🏦 *Loans*\nType *LOAN CHECK* to see your credit score!\n\n🤖 *M-Pesa Auto-Record*\nJust forward your M-Pesa messages!\n\nType *HELP* for all commands.\n\nThank you for choosing DukaApp! 🚀`);
+    twiml.message(`✅ *Registration Complete!* ✅\n\n🎉 Welcome to DukaApp, ${user.business_name}!\n\nBusiness: ${user.business_type}\nLocation: ${user.location}\n\n━━━━━━━━━━━━━━━━━━━━\n*QUICK START GUIDE*\n━━━━━━━━━━━━━━━━━━━━\n\n💰 *SALE 1000* - Record a sale\n💸 *EXPENSE 500* - Record an expense\n💵 *CASH 1000* - Record a cash sale\n📊 *PROFIT* - View your profit\n📋 *STATUS* - Check your info\n📊 *UPLOAD* - Upload M-Pesa statement\n\n📦 *Stock Management*\n• addstock sugar 50 - Add stock\n• usestock sugar 5 - Use stock\n• liststock - View all\n\n💳 *Subscription*\nYou have a *14-day free trial*!\nAfter trial: KES 299/month\nReply *PAY NOW* to subscribe early\n\n🏦 *Loans*\nType *LOAN CHECK* to see your credit score!\n\n🤖 *M-Pesa Auto-Record*\nJust forward your M-Pesa messages!\n\nType *HELP* for all commands.\n\nThank you for choosing DukaApp! 🚀`);
   }
   else if (incomingMsgLower === 'start') {
     await updateUser(userPhone, { step: 'waiting_for_business_name' });
@@ -979,6 +1252,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ DukaApp server running on port ${PORT}`);
   console.log(`✅ Health check: /health`);
   console.log(`✅ WhatsApp webhook: /whatsapp`);
-  console.log(`✅ PostgreSQL database connected - PERMANENT STORAGE`);
-  console.log(`✅ Users will NEVER have to register again!`);
+  console.log(`✅ Admin dashboard: /admin-dashboard (Password: Dallas123!)`);
+  console.log(`✅ M-Pesa Statement Analysis enabled`);
+  console.log(`✅ M-Pesa Auto-Detection enabled`);
+  console.log(`✅ Loan & Credit Scoring enabled`);
+  console.log(`✅ Stock management enabled`);
+  console.log(`✅ Permanent registration enabled`);
 });
