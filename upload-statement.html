@@ -109,39 +109,6 @@
             cursor: pointer;
         }
 
-        .password-field {
-            margin: 20px 0;
-        }
-
-        .password-field label {
-            display: block;
-            font-weight: 600;
-            color: #0F2B3D;
-            margin-bottom: 8px;
-            font-size: 14px;
-        }
-
-        .password-field input {
-            width: 100%;
-            padding: 12px 16px;
-            border: 1px solid #D1D5DB;
-            border-radius: 10px;
-            font-size: 16px;
-            transition: border-color 0.3s;
-        }
-
-        .password-field input:focus {
-            outline: none;
-            border-color: #25A55C;
-            box-shadow: 0 0 0 3px rgba(37, 165, 92, 0.1);
-        }
-
-        .password-field .hint {
-            font-size: 12px;
-            color: #6B7280;
-            margin-top: 5px;
-        }
-
         .btn {
             background: #25A55C;
             color: white;
@@ -329,18 +296,128 @@
             transform: scale(1.02);
         }
 
-        .debug-info {
-            background: #F3F4F6;
-            border-radius: 12px;
-            padding: 15px;
-            margin: 15px 0;
-            font-size: 12px;
+        /* Password Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.6);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-box {
+            background: white;
+            border-radius: 24px;
+            padding: 40px;
+            max-width: 450px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 25px 60px rgba(0,0,0,0.3);
+            animation: modalFadeIn 0.3s ease;
+        }
+
+        @keyframes modalFadeIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .modal-box .modal-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+
+        .modal-box h2 {
+            color: #0F2B3D;
+            margin-bottom: 10px;
+            font-size: 22px;
+        }
+
+        .modal-box p {
             color: #6B7280;
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .modal-box input {
+            width: 100%;
+            padding: 14px 16px;
+            border: 1px solid #D1D5DB;
+            border-radius: 12px;
+            font-size: 16px;
+            text-align: center;
+            letter-spacing: 4px;
+            font-weight: 600;
+        }
+
+        .modal-box input:focus {
+            outline: none;
+            border-color: #25A55C;
+            box-shadow: 0 0 0 3px rgba(37, 165, 92, 0.1);
+        }
+
+        .modal-box .modal-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .modal-box .modal-btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .modal-box .modal-btn-primary {
+            background: #25A55C;
+            color: white;
+        }
+
+        .modal-box .modal-btn-primary:hover {
+            background: #1e8a4c;
+        }
+
+        .modal-box .modal-btn-secondary {
+            background: #F3F4F6;
+            color: #4B5563;
+        }
+
+        .modal-box .modal-btn-secondary:hover {
+            background: #E5E7EB;
+        }
+
+        .modal-box .modal-error {
+            color: #EF4444;
+            font-size: 13px;
+            margin-top: 10px;
             display: none;
         }
 
-        .debug-info.show {
+        .modal-box .modal-error.show {
             display: block;
+        }
+
+        .modal-box .file-name-display {
+            background: #F9FAFB;
+            padding: 10px;
+            border-radius: 10px;
+            font-size: 14px;
+            color: #0F2B3D;
+            margin-bottom: 15px;
+            word-break: break-all;
         }
 
         @media (max-width: 600px) {
@@ -355,6 +432,12 @@
             }
             .result-box .summary {
                 grid-template-columns: repeat(2, 1fr);
+            }
+            .modal-box {
+                padding: 30px 20px;
+            }
+            .modal-box .modal-buttons {
+                flex-direction: column;
             }
         }
     </style>
@@ -386,13 +469,6 @@
         </p>
     </div>
 
-    <!-- Password Field -->
-    <div class="password-field">
-        <label for="pdfPassword">🔐 PDF Password (if applicable)</label>
-        <input type="password" id="pdfPassword" placeholder="Enter your M-Pesa statement password">
-        <div class="hint">Your M-Pesa statement password is usually your Safaricom PIN or the password you set when downloading.</div>
-    </div>
-
     <!-- Upload Area -->
     <div class="upload-box" id="uploadBox">
         <div class="icon">📁</div>
@@ -413,12 +489,6 @@
 
     <button class="btn" id="uploadBtn" disabled>📊 Analyze Statement</button>
     <button class="btn btn-secondary" id="pasteBtn">📝 Paste Statement Text Instead</button>
-
-    <!-- Debug Info -->
-    <div class="debug-info" id="debugInfo">
-        <strong>Debug Info:</strong>
-        <div id="debugContent"></div>
-    </div>
 
     <!-- Loading -->
     <div class="loading" id="loading">
@@ -444,7 +514,28 @@
     </div>
 </div>
 
+<!-- ============================================================ -->
+<!-- PASSWORD MODAL (Popup) -->
+<!-- ============================================================ -->
+<div class="modal-overlay" id="passwordModal">
+    <div class="modal-box">
+        <div class="modal-icon">🔐</div>
+        <h2>Enter M-Pesa PIN</h2>
+        <p>This PDF is password protected. Enter your Safaricom PIN to unlock it.</p>
+        <div class="file-name-display" id="modalFileName">File: your-statement.pdf</div>
+        <input type="password" id="modalPinInput" placeholder="Enter your PIN" maxlength="6" inputmode="numeric">
+        <div class="modal-error" id="modalError">❌ Incorrect PIN. Please try again.</div>
+        <div class="modal-buttons">
+            <button class="modal-btn modal-btn-secondary" id="modalCancelBtn">Cancel</button>
+            <button class="modal-btn modal-btn-primary" id="modalConfirmBtn">🔓 Unlock & Analyze</button>
+        </div>
+    </div>
+</div>
+
 <script>
+    // ============================================================
+    // DOM References
+    // ============================================================
     const uploadBox = document.getElementById('uploadBox');
     const fileInput = document.getElementById('fileInput');
     const fileInfo = document.getElementById('fileInfo');
@@ -456,20 +547,21 @@
     const resultBox = document.getElementById('resultBox');
     const resultContent = document.getElementById('resultContent');
     const errorMessage = document.getElementById('errorMessage');
-    const pdfPassword = document.getElementById('pdfPassword');
-    const debugInfo = document.getElementById('debugInfo');
-    const debugContent = document.getElementById('debugContent');
+
+    // Modal elements
+    const passwordModal = document.getElementById('passwordModal');
+    const modalFileName = document.getElementById('modalFileName');
+    const modalPinInput = document.getElementById('modalPinInput');
+    const modalError = document.getElementById('modalError');
+    const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+    const modalCancelBtn = document.getElementById('modalCancelBtn');
 
     let selectedFile = null;
+    let pendingFileUpload = null;
 
-    // Show debug info
-    function showDebug(message) {
-        debugInfo.classList.add('show');
-        debugContent.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
-        console.log('Debug:', message);
-    }
-
-    // Drag and drop events
+    // ============================================================
+    // File Selection Handlers
+    // ============================================================
     uploadBox.addEventListener('dragover', (e) => {
         e.preventDefault();
         uploadBox.classList.add('dragover');
@@ -483,14 +575,12 @@
         e.preventDefault();
         uploadBox.classList.remove('dragover');
         if (e.dataTransfer.files.length > 0) {
-            showDebug('File dropped: ' + e.dataTransfer.files[0].name);
             handleFile(e.dataTransfer.files[0]);
         }
     });
 
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            showDebug('File selected: ' + e.target.files[0].name);
             handleFile(e.target.files[0]);
         }
     });
@@ -499,15 +589,11 @@
         const ext = file.name.split('.').pop().toLowerCase();
         const validExts = ['pdf', 'csv', 'txt'];
 
-        showDebug('File extension: ' + ext);
-        showDebug('File size: ' + (file.size / 1024).toFixed(1) + ' KB');
-
         if (!validExts.includes(ext)) {
             errorMessage.textContent = '❌ Please select a PDF, CSV, or TXT file.';
             errorMessage.classList.add('show');
             uploadBtn.disabled = true;
             selectedFile = null;
-            showDebug('Invalid file type: ' + ext);
             return;
         }
 
@@ -517,24 +603,84 @@
         fileSize.textContent = (file.size / 1024).toFixed(1) + ' KB';
         fileInfo.classList.add('show');
         uploadBtn.disabled = false;
-        showDebug('File accepted: ' + file.name);
     }
 
+    // ============================================================
+    // Upload Button - Opens Password Modal
+    // ============================================================
     uploadBtn.addEventListener('click', () => {
-        if (!selectedFile) {
-            showDebug('No file selected');
-            return;
+        if (!selectedFile) return;
+
+        // Check if it's a PDF - show password modal
+        const ext = selectedFile.name.split('.').pop().toLowerCase();
+        if (ext === 'pdf') {
+            // Show password modal
+            modalFileName.textContent = 'File: ' + selectedFile.name;
+            modalPinInput.value = '';
+            modalError.classList.remove('show');
+            passwordModal.classList.add('active');
+            modalPinInput.focus();
+            pendingFileUpload = selectedFile;
+        } else {
+            // CSV or TXT - upload directly
+            uploadFile(selectedFile, '');
         }
-        showDebug('Upload button clicked');
-        uploadFile(selectedFile);
     });
 
+    // ============================================================
+    // Modal Handlers
+    // ============================================================
+    modalConfirmBtn.addEventListener('click', () => {
+        const pin = modalPinInput.value.trim();
+        if (!pin) {
+            modalError.textContent = '❌ Please enter your PIN.';
+            modalError.classList.add('show');
+            return;
+        }
+        if (pin.length < 4) {
+            modalError.textContent = '❌ PIN must be at least 4 digits.';
+            modalError.classList.add('show');
+            return;
+        }
+        modalError.classList.remove('show');
+        passwordModal.classList.remove('active');
+        if (pendingFileUpload) {
+            uploadFile(pendingFileUpload, pin);
+            pendingFileUpload = null;
+        }
+    });
+
+    modalCancelBtn.addEventListener('click', () => {
+        passwordModal.classList.remove('active');
+        pendingFileUpload = null;
+    });
+
+    // Close modal when clicking outside
+    passwordModal.addEventListener('click', (e) => {
+        if (e.target === passwordModal) {
+            passwordModal.classList.remove('active');
+            pendingFileUpload = null;
+        }
+    });
+
+    // Enter key on PIN input
+    modalPinInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            modalConfirmBtn.click();
+        }
+    });
+
+    // ============================================================
+    // Paste Button
+    // ============================================================
     pasteBtn.addEventListener('click', () => {
-        showDebug('Paste button clicked - redirecting to WhatsApp');
         window.location.href = 'https://wa.me/14155238886?text=UPLOAD';
     });
 
-    async function uploadFile(file) {
+    // ============================================================
+    // File Upload Function
+    // ============================================================
+    async function uploadFile(file, password) {
         uploadBtn.disabled = true;
         loading.classList.add('show');
         resultBox.classList.remove('show');
@@ -542,11 +688,7 @@
 
         const formData = new FormData();
         formData.append('statement', file);
-        const password = pdfPassword.value || '';
         formData.append('password', password);
-
-        showDebug('Uploading file: ' + file.name);
-        showDebug('Password provided: ' + (password ? 'Yes' : 'No'));
 
         try {
             const response = await fetch('/api/upload-statement?phone=whatsapp:+254710440648', {
@@ -554,25 +696,28 @@
                 body: formData
             });
 
-            showDebug('Response status: ' + response.status);
-
             const data = await response.json();
-            showDebug('Response received');
-
             loading.classList.remove('show');
 
             if (data.success) {
-                showDebug('Analysis successful!');
                 displayResults(data);
             } else {
-                showDebug('Error: ' + data.error);
+                // If error is about password, show modal again
+                if (data.error && data.error.toLowerCase().includes('password')) {
+                    modalError.textContent = '❌ ' + data.error;
+                    modalError.classList.add('show');
+                    passwordModal.classList.add('active');
+                    modalPinInput.value = '';
+                    modalPinInput.focus();
+                    uploadBtn.disabled = false;
+                    return;
+                }
                 errorMessage.textContent = '❌ ' + (data.error || 'Something went wrong. Please try again.');
                 errorMessage.classList.add('show');
                 uploadBtn.disabled = false;
             }
         } catch (error) {
             loading.classList.remove('show');
-            showDebug('Fetch error: ' + error.message);
             errorMessage.textContent = '❌ Failed to upload. Please check your connection and try again.';
             errorMessage.classList.add('show');
             uploadBtn.disabled = false;
@@ -580,6 +725,9 @@
         }
     }
 
+    // ============================================================
+    // Display Results
+    // ============================================================
     function displayResults(data) {
         const summary = data.summary;
         resultContent.innerHTML = `
@@ -632,10 +780,6 @@
         fileInfo.classList.remove('show');
         fileInput.value = '';
     }
-
-    // Initial debug
-    showDebug('Page loaded');
-    showDebug('API endpoint: /api/upload-statement');
 </script>
 
 </body>
