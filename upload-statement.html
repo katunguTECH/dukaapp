@@ -329,6 +329,20 @@
             transform: scale(1.02);
         }
 
+        .debug-info {
+            background: #F3F4F6;
+            border-radius: 12px;
+            padding: 15px;
+            margin: 15px 0;
+            font-size: 12px;
+            color: #6B7280;
+            display: none;
+        }
+
+        .debug-info.show {
+            display: block;
+        }
+
         @media (max-width: 600px) {
             .container {
                 padding: 24px;
@@ -400,6 +414,12 @@
     <button class="btn" id="uploadBtn" disabled>📊 Analyze Statement</button>
     <button class="btn btn-secondary" id="pasteBtn">📝 Paste Statement Text Instead</button>
 
+    <!-- Debug Info -->
+    <div class="debug-info" id="debugInfo">
+        <strong>Debug Info:</strong>
+        <div id="debugContent"></div>
+    </div>
+
     <!-- Loading -->
     <div class="loading" id="loading">
         <div class="spinner"></div>
@@ -437,8 +457,17 @@
     const resultContent = document.getElementById('resultContent');
     const errorMessage = document.getElementById('errorMessage');
     const pdfPassword = document.getElementById('pdfPassword');
+    const debugInfo = document.getElementById('debugInfo');
+    const debugContent = document.getElementById('debugContent');
 
     let selectedFile = null;
+
+    // Show debug info
+    function showDebug(message) {
+        debugInfo.classList.add('show');
+        debugContent.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+        console.log('Debug:', message);
+    }
 
     // Drag and drop events
     uploadBox.addEventListener('dragover', (e) => {
@@ -454,12 +483,14 @@
         e.preventDefault();
         uploadBox.classList.remove('dragover');
         if (e.dataTransfer.files.length > 0) {
+            showDebug('File dropped: ' + e.dataTransfer.files[0].name);
             handleFile(e.dataTransfer.files[0]);
         }
     });
 
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
+            showDebug('File selected: ' + e.target.files[0].name);
             handleFile(e.target.files[0]);
         }
     });
@@ -468,11 +499,15 @@
         const ext = file.name.split('.').pop().toLowerCase();
         const validExts = ['pdf', 'csv', 'txt'];
 
+        showDebug('File extension: ' + ext);
+        showDebug('File size: ' + (file.size / 1024).toFixed(1) + ' KB');
+
         if (!validExts.includes(ext)) {
             errorMessage.textContent = '❌ Please select a PDF, CSV, or TXT file.';
             errorMessage.classList.add('show');
             uploadBtn.disabled = true;
             selectedFile = null;
+            showDebug('Invalid file type: ' + ext);
             return;
         }
 
@@ -482,14 +517,20 @@
         fileSize.textContent = (file.size / 1024).toFixed(1) + ' KB';
         fileInfo.classList.add('show');
         uploadBtn.disabled = false;
+        showDebug('File accepted: ' + file.name);
     }
 
     uploadBtn.addEventListener('click', () => {
-        if (!selectedFile) return;
+        if (!selectedFile) {
+            showDebug('No file selected');
+            return;
+        }
+        showDebug('Upload button clicked');
         uploadFile(selectedFile);
     });
 
     pasteBtn.addEventListener('click', () => {
+        showDebug('Paste button clicked - redirecting to WhatsApp');
         window.location.href = 'https://wa.me/14155238886?text=UPLOAD';
     });
 
@@ -501,7 +542,11 @@
 
         const formData = new FormData();
         formData.append('statement', file);
-        formData.append('password', pdfPassword.value || '');
+        const password = pdfPassword.value || '';
+        formData.append('password', password);
+
+        showDebug('Uploading file: ' + file.name);
+        showDebug('Password provided: ' + (password ? 'Yes' : 'No'));
 
         try {
             const response = await fetch('/api/upload-statement?phone=whatsapp:+254710440648', {
@@ -509,19 +554,25 @@
                 body: formData
             });
 
+            showDebug('Response status: ' + response.status);
+
             const data = await response.json();
+            showDebug('Response received');
 
             loading.classList.remove('show');
 
             if (data.success) {
+                showDebug('Analysis successful!');
                 displayResults(data);
             } else {
+                showDebug('Error: ' + data.error);
                 errorMessage.textContent = '❌ ' + (data.error || 'Something went wrong. Please try again.');
                 errorMessage.classList.add('show');
                 uploadBtn.disabled = false;
             }
         } catch (error) {
             loading.classList.remove('show');
+            showDebug('Fetch error: ' + error.message);
             errorMessage.textContent = '❌ Failed to upload. Please check your connection and try again.';
             errorMessage.classList.add('show');
             uploadBtn.disabled = false;
@@ -581,6 +632,10 @@
         fileInfo.classList.remove('show');
         fileInput.value = '';
     }
+
+    // Initial debug
+    showDebug('Page loaded');
+    showDebug('API endpoint: /api/upload-statement');
 </script>
 
 </body>
