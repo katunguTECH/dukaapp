@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
-    <title>DukaApp - Track Profit & Access Loans | WhatsApp Business Tool</title>
+    <title>DukaApp - Unajua Faida Yako ya Leo? | WhatsApp Profit Tracker</title>
     <style>
         * {
             margin: 0;
@@ -13,9 +13,9 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: #fff;
-            color: #1F2937;
             line-height: 1.6;
+            color: #1F2937;
+            background: #fff;
         }
 
         .container {
@@ -24,7 +24,7 @@
             padding: 0 24px;
         }
 
-        /* Navigation */
+        /* Header / Navigation */
         .navbar {
             padding: 20px 0;
             display: flex;
@@ -35,13 +35,10 @@
             border-bottom: 1px solid #e5e7eb;
         }
 
-        .logo {
-            font-size: 28px;
-            font-weight: 800;
-            background: linear-gradient(135deg, #0F2B3D 0%, #1B4A6F 100%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
+        .logo img {
+            height: 40px;
+            width: auto;
+            display: block;
         }
 
         .nav-links {
@@ -99,22 +96,28 @@
             border-radius: 40px;
             text-decoration: none;
             font-weight: 600;
+            display: inline-block;
+            transition: background 0.2s;
         }
 
-        .btn-loan {
-            background: linear-gradient(135deg, #FF8C00, #FF6B00);
+        .btn-video {
+            background: #1F2937;
             color: white;
-            padding: 16px 36px;
-            border-radius: 50px;
+            padding: 14px 32px;
+            border-radius: 40px;
             text-decoration: none;
             font-weight: 700;
-            display: inline-block;
-            transition: transform 0.2s;
-            font-size: 18px;
-            box-shadow: 0 6px 12px -6px rgba(255, 107, 0, 0.4);
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            transition: transform 0.2s, background 0.2s;
+            cursor: pointer;
+            border: none;
+            font-size: 16px;
         }
 
-        .btn-loan:hover {
+        .btn-video:hover {
+            background: #374151;
             transform: translateY(-2px);
         }
 
@@ -137,16 +140,6 @@
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-        }
-
-        .hero .loan-highlight {
-            background: linear-gradient(135deg, #FF8C00, #FF6B00);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent;
-            display: block;
-            font-size: 56px;
-            margin-top: 10px;
         }
 
         .hero p {
@@ -175,50 +168,62 @@
             margin-bottom: 24px;
         }
 
-        /* Loan Banner */
-        .loan-banner {
-            background: linear-gradient(135deg, #FFF3E0, #FFE0B2);
-            border-radius: 30px;
-            padding: 40px;
-            margin: 40px 0;
-            text-align: center;
-            border: 1px solid #FFD699;
+        /* Video Container */
+        .video-container {
+            max-width: 800px;
+            margin: 0 auto 40px;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+            background: #000;
+            aspect-ratio: 16 / 9;
         }
 
-        .loan-banner h2 {
-            font-size: 32px;
-            color: #E65100;
-            margin-bottom: 15px;
+        .video-container iframe {
+            width: 100%;
+            height: 100%;
         }
 
-        .loan-banner .loan-amount {
-            font-size: 48px;
-            font-weight: 800;
-            color: #FF6B00;
-            margin: 15px 0;
-        }
-
-        .loan-banner .loan-stats {
-            display: flex;
+        /* Video Modal */
+        .video-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 2000;
+            align-items: center;
             justify-content: center;
-            gap: 40px;
-            margin: 25px 0;
-            flex-wrap: wrap;
         }
 
-        .loan-stat {
-            text-align: center;
+        .video-modal-content {
+            position: relative;
+            max-width: 900px;
+            width: 90%;
+            aspect-ratio: 16 / 9;
         }
 
-        .loan-stat .number {
-            font-size: 28px;
-            font-weight: 800;
-            color: #E65100;
+        .video-modal iframe {
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
         }
 
-        .loan-stat .label {
-            font-size: 14px;
-            color: #6B7280;
+        .close-modal {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            color: white;
+            font-size: 30px;
+            cursor: pointer;
+            background: none;
+            border: none;
+        }
+
+        .close-modal:hover {
+            color: #25A55C;
         }
 
         /* Features Grid */
@@ -246,14 +251,6 @@
         .feature-card {
             text-align: center;
             padding: 24px;
-            background: white;
-            border-radius: 20px;
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-
-        .feature-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
         }
 
         .feature-icon {
@@ -264,20 +261,6 @@
         .feature-card h3 {
             font-size: 24px;
             margin-bottom: 12px;
-        }
-
-        .feature-card p {
-            color: #6B7280;
-            font-size: 15px;
-        }
-
-        .loan-feature {
-            border: 2px solid #FF8C00;
-            background: linear-gradient(135deg, #FFF8F0, white);
-        }
-
-        .loan-feature .feature-icon {
-            font-size: 48px;
         }
 
         /* How it works */
@@ -313,6 +296,146 @@
             margin: 0 auto 20px;
         }
 
+        /* Agreement Sections */
+        .agreement-section {
+            padding: 60px 0;
+            background: #F9FAFB;
+            border-radius: 40px;
+            margin: 40px 0;
+        }
+
+        .agreement-tabs {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 30px;
+        }
+
+        .tab-btn {
+            background: #e5e7eb;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 40px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .tab-btn.active {
+            background: #0F2B3D;
+            color: white;
+        }
+
+        .agreement-content {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .agreement-content h3 {
+            color: #0F2B3D;
+            margin: 20px 0 10px;
+        }
+
+        .agreement-content h4 {
+            margin: 15px 0 10px;
+            color: #1F2937;
+        }
+
+        .agreement-content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+
+        .agreement-content th, .agreement-content td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+
+        .agreement-content th {
+            background: #f0f0f0;
+        }
+
+        .accept-checkbox {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f0fdf4;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .accept-checkbox label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+
+        .accept-checkbox input {
+            width: 20px;
+            height: 20px;
+        }
+
+        .accept-checkbox button {
+            margin-top: 15px;
+            background: #25A55C;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 40px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .accept-checkbox button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        /* Contact Section */
+        .contact-section {
+            padding: 60px 0;
+            background: #F9FAFB;
+            border-radius: 40px;
+            margin: 40px 0;
+        }
+
+        .contact-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            text-align: center;
+        }
+
+        .contact-card {
+            background: white;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
+        }
+
+        .contact-card h3 {
+            color: #0F2B3D;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+
+        .contact-card a {
+            color: #25A55C;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
         /* CTA Banner */
         .cta-banner {
             background: #0F2B3D;
@@ -326,29 +449,6 @@
         .cta-banner h2 {
             font-size: 32px;
             margin-bottom: 20px;
-        }
-
-        /* Loan Partners */
-        .partners {
-            padding: 40px 0;
-            text-align: center;
-        }
-
-        .partner-logos {
-            display: flex;
-            justify-content: center;
-            gap: 40px;
-            flex-wrap: wrap;
-            margin-top: 30px;
-        }
-
-        .partner {
-            background: white;
-            padding: 15px 30px;
-            border-radius: 50px;
-            font-weight: 600;
-            color: #0F2B3D;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
         /* Footer */
@@ -400,26 +500,80 @@
             transform: scale(1.05);
         }
 
+        /* Chat Modal */
+        .chat-modal {
+            display: none;
+            position: fixed;
+            bottom: 100px;
+            right: 30px;
+            width: 350px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            z-index: 1001;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: #075E54;
+            color: white;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+        }
+
+        .chat-body {
+            padding: 20px;
+            text-align: center;
+        }
+
+        .chat-whatsapp-btn {
+            background: #25D366;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 40px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 15px;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            text-decoration: none;
+        }
+
         @media (max-width: 768px) {
             .hero h1 { font-size: 36px; }
-            .hero .loan-highlight { font-size: 42px; }
             .navbar { flex-direction: column; }
             .section-title { font-size: 28px; }
-            .loan-banner h2 { font-size: 24px; }
-            .loan-banner .loan-amount { font-size: 36px; }
+            .chat-modal { width: 300px; right: 20px; bottom: 80px; }
+            .logo img { height: 32px; }
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <!-- Navigation -->
+    <!-- Navigation with Logo -->
     <div class="navbar">
-        <div class="logo">DukaApp</div>
+        <div class="logo">
+            <img src="DukaApp-logo.png" alt="DukaApp Logo">
+        </div>
         <div class="nav-links">
             <a href="#features">Features</a>
-            <a href="#loans">Loans</a>
             <a href="#how-it-works">How it works</a>
+            <a href="#agreements">Agreements</a>
             <a href="#contact">Contact</a>
             <a href="/agent-signup" class="btn-outline">Become an Agent</a>
         </div>
@@ -428,37 +582,21 @@
     <!-- Hero Section -->
     <div class="hero">
         <div class="whatsapp-badge">✅ Works on WhatsApp | No App Required</div>
-        <h1>Unajua <span class="highlight">Faida Yako</span> ya Leo?<br>
-        <span class="loan-highlight">Pata Loan Hadi KES 100,000+</span></h1>
-        <p>DukaApp automatically calculates your daily profit from M-Pesa messages. Get a clear report every evening. Plus, use your sales history to access business loans!</p>
+        <h1>Unajua <span class="highlight">Faida Yako</span> ya Leo?</h1>
+        <p>DukaApp automatically calculates your daily profit from M-Pesa messages. Get a clear report every evening. Simple, fast, and made for Kenyan dukas.</p>
         <div class="hero-buttons">
-            <a href="https://wa.me/14155238886?text=start" class="btn-primary" target="_blank">Start Free Trial →</a>
-            <a href="#loans" class="btn-loan">💰 Check Loan Eligibility →</a>
+            <a href="https://wa.me/254710440648?text=join%20adjective-weigh" class="btn-primary" target="_blank">Start Free Trial →</a>
+            <a href="#" class="btn-video" id="watchVideoBtn">
+                ▶️ Watch Tutorial
+            </a>
         </div>
+        
+        <!-- YouTube Video embedded in hero section -->
+        <div class="video-container">
+            <iframe width="560" height="315" src="https://www.youtube.com/embed/adXMiF9BJTA?rel=0" title="DukaApp Tutorial - How to Track Daily Profit on WhatsApp" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+        
         <p style="font-size: 14px; color: #6B7280;">✅ 14 days free. No credit card. Cancel anytime.</p>
-    </div>
-
-    <!-- LOAN BANNER - Prominent Display -->
-    <div id="loans" class="loan-banner">
-        <h2>🏦 Pata Loan kwa Biashara Yako!</h2>
-        <p>Your transaction history = Your credit score. No collateral needed.</p>
-        <div class="loan-amount">🎯 Loan Amount: KES 10,000 - 500,000+</div>
-        <div class="loan-stats">
-            <div class="loan-stat">
-                <div class="number">85%</div>
-                <div class="label">of duka owners took repeat loans</div>
-            </div>
-            <div class="loan-stat">
-                <div class="number">3%</div>
-                <div class="label">non-performing loan rate</div>
-            </div>
-            <div class="loan-stat">
-                <div class="number">82%</div>
-                <div class="label">average revenue increase</div>
-            </div>
-        </div>
-        <a href="https://wa.me/14155238886?text=loan%20check" class="btn-loan" style="display: inline-block; margin-top: 20px;">📊 Check Your Loan Eligibility →</a>
-        <p style="margin-top: 20px; font-size: 14px;">Partner lenders: 4G Capital, Branch, Tala, Equity Bank</p>
     </div>
 
     <!-- Features Section -->
@@ -476,10 +614,10 @@
                     <h3>Expense Tracking</h3>
                     <p>Record stock, rent, or any expense. See where your money goes.</p>
                 </div>
-                <div class="feature-card loan-feature">
-                    <div class="feature-icon">🏦</div>
-                    <h3 style="color: #E65100;">Loan Access 🆕</h3>
-                    <p>Your sales history helps you qualify for business loans automatically. Up to KES 500,000!</p>
+                <div class="feature-card">
+                    <div class="feature-icon">🔮</div>
+                    <h3>Loan Ready Data</h3>
+                    <p>Your sales history helps you qualify for business loans automatically.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📱</div>
@@ -500,27 +638,23 @@
         </div>
     </div>
 
-    <!-- Loan Partners Section -->
-    <div class="partners">
-        <h3 style="color: #0F2B3D;">Our Lending Partners</h3>
-        <div class="partner-logos">
-            <div class="partner">🏦 4G Capital</div>
-            <div class="partner">💰 Branch</div>
-            <div class="partner">⭐ Tala</div>
-            <div class="partner">🏛️ Equity Bank</div>
-            <div class="partner">📈 M-Kopa</div>
-        </div>
-    </div>
-
     <!-- How It Works -->
     <div id="how-it-works" class="how-it-works">
         <div class="container">
             <h2 class="section-title">How DukaApp Works</h2>
+            
+            <!-- Video button above steps -->
+            <div style="text-align: center; margin-bottom: 40px;">
+                <a href="#" id="watchVideoBtn2" class="btn-video" style="background: #25A55C;">
+                    🎬 Watch DukaApp in Action (30 sec)
+                </a>
+            </div>
+            
             <div class="steps">
                 <div class="step">
                     <div class="step-number">1</div>
                     <h3>Join on WhatsApp</h3>
-                    <p>Click "Start Free Trial" and send START to begin.</p>
+                    <p>Click "Start Free Trial" and send the pre-filled messages to our WhatsApp number.</p>
                 </div>
                 <div class="step">
                     <div class="step-number">2</div>
@@ -535,31 +669,259 @@
                 <div class="step">
                     <div class="step-number">4</div>
                     <h3>Unlock Loans</h3>
-                    <p>After 60 days of data, qualify for working capital loans up to KES 500,000!</p>
+                    <p>After 60 days of data, qualify for working capital loans.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Modal (Popup) -->
+    <div id="videoModal" class="video-modal">
+        <div class="video-modal-content">
+            <button class="close-modal" id="closeModalBtn">&times;</button>
+            <iframe width="560" height="315" src="https://www.youtube.com/embed/adXMiF9BJTA?rel=0&autoplay=1" title="DukaApp Tutorial" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        </div>
+    </div>
+
+    <!-- Agreements Section -->
+    <div id="agreements" class="agreement-section">
+        <div class="container">
+            <h2 class="section-title">Legal Agreements</h2>
+            <p style="text-align: center; margin-bottom: 30px;">Please read and accept the relevant agreement before proceeding.</p>
+            
+            <div class="agreement-tabs">
+                <button class="tab-btn active" data-tab="customer">Customer Agreement</button>
+                <button class="tab-btn" data-tab="agent">Agent Agreement (English)</button>
+                <button class="tab-btn" data-tab="agent-sw">Agent Agreement (Swahili)</button>
+                <button class="tab-btn" data-tab="customer-sw">Customer Agreement (Swahili)</button>
+            </div>
+
+            <!-- Customer Agreement (English) -->
+            <div id="tab-customer" class="agreement-content active-tab">
+                <h3>DUKAAPP SOFTWARE AS A SERVICE (SaaS) SUBSCRIPTION AGREEMENT</h3>
+                <p><strong>THIS AGREEMENT</strong> is made on this ______ day of ______ 2026</p>
+                <p><strong>BETWEEN:</strong> DUKAAPP BUSINESS TECHNOLOGIES (Company Registration No. _____________) of Nairobi, Kenya ("The Provider") AND the Customer named below.</p>
+                
+                <h4>1. DEFINITIONS</h4>
+                <ul>
+                    <li><strong>"DukaApp"</strong> means the WhatsApp-based financial tracking platform</li>
+                    <li><strong>"Subscription Fee"</strong> means KES 299 per month per shop</li>
+                    <li><strong>"Trial Period"</strong> means 14 days from registration date with no payment required</li>
+                </ul>
+                
+                <h4>2. SERVICES PROVIDED</h4>
+                <p>The Provider grants the Customer a non-exclusive, non-transferable right to access and use DukaApp which provides: Sales and expense tracking via WhatsApp, Daily profit calculation and reporting, Weekly summary reports, M-Pesa transaction integration, and basic Inventory tracking.</p>
+                
+                <h4>3. SUBSCRIPTION TERM AND FEES</h4>
+                <table>
+                    <tr><th>Period</th><th>Fee</th><th>Payment Method</th></tr>
+                    <tr><td>Trial Period (first 14 days)</td><td>FREE</td><td>No payment required</td></tr>
+                    <tr><td>Monthly Subscription (after trial)</td><td>KES 299</td><td>M-Pesa Paybill</td></tr>
+                    <tr><td>Annual Subscription (optional)</td><td>KES 3,000 (2 months FREE)</td><td>M-Pesa Paybill</td></tr>
+                </table>
+                <p>Payment is due on the same day each month following the trial period. Late payment beyond 7 days may result in service suspension.</p>
+                
+                <h4>4. CUSTOMER OBLIGATIONS</h4>
+                <p>The Customer agrees to: Provide accurate business information, maintain valid M-Pesa line, not share access credentials, and use DukaApp only for lawful business purposes.</p>
+                
+                <h4>5. RESTRICTIONS</h4>
+                <p>The Customer shall not: reverse engineer the software, resell access, use for illegal activities, or intentionally input false data.</p>
+                
+                <h4>6. DATA OWNERSHIP AND PRIVACY</h4>
+                <p>All User Data remains the exclusive property of the Customer. The Provider shall comply with the Data Protection Act, 2019.</p>
+                
+                <h4>7. TERMINATION</h4>
+                <table>
+                    <tr><th>Termination Type</th><th>Notice Period</th><th>Refund Policy</th></tr>
+                    <tr><td>By Customer</td><td>7 days written notice</td><td>No refund for partial month</td></tr>
+                    <tr><td>By Provider for non-payment</td><td>7 days after missed payment</td><td>No refund</td></tr>
+                    <tr><td>By Provider for breach</td><td>Immediate</td><td>No refund</td></tr>
+                </table>
+                
+                <h4>8. DISPUTE RESOLUTION</h4>
+                <p>Any dispute shall first be referred to mediation. If unresolved, the matter shall be submitted to arbitration in Nairobi under the Arbitration Act, 1995.</p>
+                
+                <h4>9. GOVERNING LAW</h4>
+                <p>This Agreement shall be governed by the laws of the Republic of Kenya.</p>
+                
+                <div class="accept-checkbox">
+                    <label>
+                        <input type="checkbox" id="acceptCustomer" onchange="toggleCustomerButton()">
+                        I have read and agree to the DukaApp Customer Agreement
+                    </label>
+                    <button id="customerProceedBtn" onclick="proceedToWhatsApp()" disabled>Proceed to WhatsApp →</button>
+                </div>
+            </div>
+
+            <!-- Agent Agreement (English) -->
+            <div id="tab-agent" class="agreement-content" style="display:none">
+                <h3>DUKAAPP AGENCY AGREEMENT</h3>
+                <p><strong>THIS AGREEMENT</strong> is made on this ______ day of ______ 2026</p>
+                <p><strong>BETWEEN:</strong> DUKAAPP BUSINESS TECHNOLOGIES (Company Registration No. _____________) of Nairobi, Kenya ("The Company") AND the Agent named below.</p>
+                
+                <h4>1. APPOINTMENT</h4>
+                <p>The Company appoints the Agent as a non-exclusive sales agent to recruit shop owners to the DukaApp platform within Kenya.</p>
+                
+                <h4>2. TERM OF AGREEMENT</h4>
+                <p>This Agreement shall continue for a period of one (1) year. Either party may terminate by giving fourteen (14) days' written notice.</p>
+                
+                <h4>3. AGENT RESPONSIBILITIES</h4>
+                <ul>
+                    <li>Recruit shop owners to register for DukaApp services</li>
+                    <li>Provide accurate information about DukaApp features and pricing</li>
+                    <li>Assist shop owners with the registration process</li>
+                    <li>Maintain professional conduct when representing the Company</li>
+                </ul>
+                
+                <h4>4. COMMISSION STRUCTURE</h4>
+                <table>
+                    <tr><th>Commission Type</th><th>Amount</th><th>Payment Condition</th></tr>
+                    <tr><td>Sign-up Bonus</td><td>KES 200 per shop</td><td>Paid when shop completes 14-day trial and first payment</td></tr>
+                    <tr><td>Recurring Commission</td><td>10% of subscription (KES 30)</td><td>Paid monthly for first 3 months</td></tr>
+                </table>
+                <p>Commission shall be paid on the <strong>10th day of each month</strong> for all qualifying sign-ups in the previous month.</p>
+                
+                <h4>5. NO EXCLUSIVITY</h4>
+                <p>The Agent is not an employee of the Company. The Agent is responsible for their own taxes and NSSF/NHIF contributions.</p>
+                
+                <h4>6. CONFIDENTIALITY</h4>
+                <p>The Agent shall not disclose commission rates, business strategies, or shop owner information to any third party.</p>
+                
+                <h4>7. CODE OF CONDUCT</h4>
+                <p>The Agent shall not: make unauthorized promises, misrepresent DukaApp features, engage in aggressive sales tactics, or register shops without consent.</p>
+                
+                <h4>8. TERMINATION FOR CAUSE</h4>
+                <p>The Company may terminate immediately if the Agent violates the Code of Conduct, makes fraudulent misrepresentations, or competes directly with the Company.</p>
+                
+                <h4>9. GOVERNING LAW</h4>
+                <p>This Agreement shall be governed by the laws of the Republic of Kenya.</p>
+                
+                <div class="accept-checkbox">
+                    <label>
+                        <input type="checkbox" id="acceptAgent" onchange="toggleAgentButton()">
+                        I have read and agree to the DukaApp Agent Agreement
+                    </label>
+                    <button id="agentProceedBtn" onclick="proceedToAgentSignup()" disabled>Proceed to Agent Signup →</button>
+                </div>
+            </div>
+
+            <!-- Agent Agreement (Swahili) -->
+            <div id="tab-agent-sw" class="agreement-content" style="display:none">
+                <h3>DUKAAPP MAKUBALIANO YA WAKALA (Toleo la Kiswahili)</h3>
+                
+                <h4>1. UTEUZI</h4>
+                <p>Kampuni inamteua Wakala kuwa muuzaji huru wa kusajili wamiliki wa maduka kwenye DukaApp.</p>
+                
+                <h4>2. MUDD WA MAKUBALIANO</h4>
+                <p>Makubaliano haya yataanza tarehe ya sahihi na kuendelea kwa mwaka mmoja (1). Yeyote anaweza kusitisha kwa taarifa ya siku 14.</p>
+                
+                <h4>3. MAJUKUMU YA WAKALA</h4>
+                <ul>
+                    <li>Kusajili maduka - Tafuta wamiliki wa maduka wajiunge na DukaApp</li>
+                    <li>Kutoa taarifa sahihi - Usidanganye kuhusu bei au huduma za DukaApp</li>
+                    <li>Kusaidia usajili - Msaidie mwenye duka kujiunga</li>
+                    <li>Kuwa na maadili - Uwajibike na uwaheshimu wateja</li>
+                </ul>
+                
+                <h4>4. TUMA (COMMISSION)</h4>
+                <table>
+                    <tr><th>Aina ya Tuma</th><th>Kiasi</th><th>Wakati wa Kulipwa</th></tr>
+                    <tr><td>Bonasi ya kujiunga</td><td>KES 200 kwa duka moja</td><td>Baada ya duka kumaliza siku 14 na kulipa ada yake</td></tr>
+                    <tr><td>Tuma ya kila mwezi</td><td>10% ya ada ya duka (KES 30)</td><td>Kila mwezi kwa miezi 3 ya kwanza</td></tr>
+                </table>
+                <p>Malipo yatafanywa tarehe 10 ya kila mwezi. Mfano: Ukisajili maduka 50 kwa mwezi, utapata KES 11,500.</p>
+                
+                <h4>5. HUU SI UAJIRI</h4>
+                <p>Wakala si mfanyakazi wa Kampuni. Wajibu wako kulipa kodi yako mwenyewe. Hutapata likizo, afya, au pensheni kutoka Kampuni.</p>
+                
+                <h4>6. SIRI ZA KAMPUNI</h4>
+                <p>Wakala hatakiwi kumwambia mtu yeyote: kiasi cha tuma, mipango ya biashara, taarifa za wamiliki wa maduka, au siri zozote za DukaApp.</p>
+                
+                <h4>7. MAADILI YA KAZI</h4>
+                <p>Hairuhusiwi: kuahidi vitu ambavyo DukaApp haitoi, kudanganya, kukasirikia wateja, au kusajili duka bila mmiliki wake kujua.</p>
+                
+                <h4>8. SHERIA INAYOTUMIKA</h4>
+                <p>Makubaliano haya yanatawaliwa na sheria za Jamhuri ya Kenya.</p>
+                
+                <div class="accept-checkbox">
+                    <label>
+                        <input type="checkbox" id="acceptAgentSw" onchange="toggleAgentSwButton()">
+                        Nimesoma na nakubali Makubaliano ya Wakala wa DukaApp
+                    </label>
+                    <button id="agentSwProceedBtn" onclick="proceedToAgentSignup()" disabled>Endelea kwa Usajili wa Wakala →</button>
+                </div>
+            </div>
+
+            <!-- Customer Agreement (Swahili) -->
+            <div id="tab-customer-sw" class="agreement-content" style="display:none">
+                <h3>DUKAAPP MAKUBALIANO YA MTEAJA (Toleo la Kiswahili)</h3>
+                
+                <h4>1. MAANA YA MANENO</h4>
+                <ul>
+                    <li><strong>"DukaApp"</strong> ni programu ya kufuatilia pesa kwenye WhatsApp</li>
+                    <li><strong>"Ada ya Mwezi"</strong> ni KES 299 kwa mwezi kwa duka moja</li>
+                    <li><strong>"Kipindi cha Majaribio"</strong> ni siku 14 za kwanza bure kabisa</li>
+                </ul>
+                
+                <h4>2. HUDUMA ZINAZOTOLEDWA</h4>
+                <p>DukaApp itakusaidia: Kufuatilia mauzo na matumizi, Kujua faida yako ya kila siku, Ripoti za kila wiki, Unganisho na M-Pesa, na Taarifa za bidhaa.</p>
+                
+                <h4>3. ADA NA MALIPO</h4>
+                <table>
+                    <tr><th>Kipindi</th><th>Ada</th><th>Jinsi ya Kulipa</th></tr>
+                    <tr><td>Siku 14 za kwanza</td><td>BURE</td><td>Hakuna malipo</td></tr>
+                    <tr><td>Kila mwezi baada ya majaribio</td><td>KES 299</td><td>M-Pesa Paybill</td></tr>
+                    <tr><td>Mwaka mzima</td><td>KES 3,000 (unaokoa KES 600)</td><td>M-Pesa Paybill</td></tr>
+                </table>
+                <p>Unalipa tarehe ile ile kila mwezi baada ya siku 14. Ukichelewa zaidi ya siku 7, huduma itasimamishwa.</p>
+                
+                <h4>4. MAJUKUMU YAKO</h4>
+                <p>Unakubali: Kutoa taarifa sahihi, kuwa na M-Pesa inayofanya kazi, kutoshirikisha namba yako, na kutumia DukaApp kwa biashara halali tu.</p>
+                
+                <h4>5. TAARIFA ZAKO NA USIRI</h4>
+                <p>Taarifa zako ni zako tu. Hatutashiriki taarifa zako na mtu mwingine bila idhini yako.</p>
+                
+                <h4>6. KUSITISHA HUDUMA</h4>
+                <table>
+                    <tr><th>Nani anakata</th><th>Taarifa</th><th>Pesa zinarudishwa?</th></tr>
+                    <tr><td>Wewe (Mteja)</td><td>Siku 7</td><td>Hapana</td></tr>
+                    <tr><td>Sisi ukichelewa kulipa</td><td>Siku 7</td><td>Hapana</td></tr>
+                    <tr><td>Sisi ukivunja sheria</td><td>Mara moja</td><td>Hapana</td></tr>
+                </table>
+                
+                <h4>7. SHERIA INAYOTUMIKA</h4>
+                <p>Makubaliano haya yanatawaliwa na sheria za Jamhuri ya Kenya.</p>
+                
+                <div class="accept-checkbox">
+                    <label>
+                        <input type="checkbox" id="acceptCustomerSw" onchange="toggleCustomerSwButton()">
+                        Nimesoma na nakubali Makubaliano ya Mteja wa DukaApp
+                    </label>
+                    <button id="customerSwProceedBtn" onclick="proceedToWhatsApp()" disabled>Endelea kwa WhatsApp →</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Contact Section -->
-    <div id="contact" class="contact-section" style="padding: 60px 0;">
+    <div id="contact" class="contact-section">
         <div class="container">
             <h2 class="section-title">Get in Touch</h2>
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 30px; text-align: center;">
-                <div style="background: #F9FAFB; padding: 30px; border-radius: 20px;">
+            <div class="contact-grid">
+                <div class="contact-card">
                     <div style="font-size: 40px;">📧</div>
                     <h3>General Inquiries</h3>
-                    <p><a href="mailto:info@dukaapp.online" style="color: #25A55C;">info@dukaapp.online</a></p>
+                    <p><a href="mailto:info@dukaapp.online">info@dukaapp.online</a></p>
                 </div>
-                <div style="background: #F9FAFB; padding: 30px; border-radius: 20px;">
+                <div class="contact-card">
                     <div style="font-size: 40px;">💰</div>
-                    <h3>Loans & Credit</h3>
-                    <p><a href="mailto:loans@dukaapp.online" style="color: #FF8C00;">loans@dukaapp.online</a></p>
+                    <h3>Sales</h3>
+                    <p><a href="mailto:sales@dukaapp.online">sales@dukaapp.online</a></p>
                 </div>
-                <div style="background: #F9FAFB; padding: 30px; border-radius: 20px;">
+                <div class="contact-card">
                     <div style="font-size: 40px;">🛠️</div>
                     <h3>Support</h3>
-                    <p><a href="mailto:support@dukaapp.online" style="color: #25A55C;">support@dukaapp.online</a></p>
+                    <p><a href="mailto:support@dukaapp.online">support@dukaapp.online</a></p>
                 </div>
             </div>
         </div>
@@ -567,12 +929,9 @@
 
     <!-- CTA Banner -->
     <div class="cta-banner">
-        <h2>Ready to grow your business?</h2>
-        <p style="margin-bottom: 8px;">Track profit, manage stock, and access loans - all on WhatsApp.</p>
-        <div style="display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;">
-            <a href="https://wa.me/14155238886?text=start" class="btn-primary" style="background: #25A55C;" target="_blank">Start Free Trial →</a>
-            <a href="https://wa.me/14155238886?text=loan%20check" class="btn-loan" target="_blank">💰 Check Loan Eligibility →</a>
-        </div>
+        <h2>Ready to know your real profit?</h2>
+        <p style="margin-bottom: 8px;">Join 100+ duka owners already tracking daily earnings.</p>
+        <a href="https://wa.me/254710440648?text=join%20adjective-weigh" class="btn-primary" style="background: #25A55C;" target="_blank">Start Free Trial →</a>
         <p style="margin-top: 24px; font-size: 14px; opacity: 0.8;">No app download. Works on any phone.</p>
     </div>
 
@@ -580,14 +939,14 @@
     <div class="footer">
         <div class="footer-links">
             <a href="#features">Features</a>
-            <a href="#loans">Loans</a>
             <a href="#how-it-works">How it works</a>
+            <a href="#agreements">Agreements</a>
             <a href="#contact">Contact</a>
             <a href="/agent-signup">Become an Agent</a>
         </div>
         <p>&copy; 2026 DukaApp Business Technologies. All Rights Reserved.</p>
-        <p style="margin-top: 8px;">📧 info@dukaapp.online | 💰 loans@dukaapp.online | 🛠️ support@dukaapp.online</p>
-        <p style="margin-top: 8px; font-size: 12px; color: #9CA3AF;">💡 Track profit. Build credit. Access loans.</p>
+        <p style="margin-top: 8px;">📧 info@dukaapp.online | 💰 sales@dukaapp.online | 🛠️ support@dukaapp.online</p>
+        <p style="margin-top: 8px; font-size: 12px; color: #9CA3AF;">Registered: d5UHdfNSrTP705B5 | Timestamped: April 23, 2026</p>
     </div>
 </div>
 
@@ -600,12 +959,125 @@
     <span>Chat with us</span>
 </a>
 
+<!-- Chat Modal -->
+<div class="chat-modal" id="chatModal">
+    <div class="chat-header">
+        <h4>DukaApp Support</h4>
+        <button class="chat-close" id="chatCloseBtn">×</button>
+    </div>
+    <div class="chat-body">
+        <div style="font-size: 48px; margin-bottom: 15px;">💬</div>
+        <p><strong>Need help?</strong></p>
+        <p>Click below to chat with us directly on WhatsApp. We'll respond in real-time!</p>
+        <a href="https://wa.me/254710440648?text=Hello%20DukaApp%2C%20I%20need%20help%20with%20your%20service" class="chat-whatsapp-btn" target="_blank">
+            Start WhatsApp Chat
+        </a>
+    </div>
+</div>
+
 <script>
-    // Chat functionality
+    // Tab switching
+    const tabs = document.querySelectorAll('.tab-btn');
+    const contents = document.querySelectorAll('.agreement-content');
+    
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            contents.forEach(content => content.style.display = 'none');
+            const tabId = tab.getAttribute('data-tab');
+            document.getElementById(`tab-${tabId}`).style.display = 'block';
+        });
+    });
+    
+    // Customer agreement checkbox
+    function toggleCustomerButton() {
+        const checkbox = document.getElementById('acceptCustomer');
+        const button = document.getElementById('customerProceedBtn');
+        button.disabled = !checkbox.checked;
+    }
+    
+    // Agent agreement checkbox (English)
+    function toggleAgentButton() {
+        const checkbox = document.getElementById('acceptAgent');
+        const button = document.getElementById('agentProceedBtn');
+        button.disabled = !checkbox.checked;
+    }
+    
+    // Agent agreement checkbox (Swahili)
+    function toggleAgentSwButton() {
+        const checkbox = document.getElementById('acceptAgentSw');
+        const button = document.getElementById('agentSwProceedBtn');
+        button.disabled = !checkbox.checked;
+    }
+    
+    // Customer agreement checkbox (Swahili)
+    function toggleCustomerSwButton() {
+        const checkbox = document.getElementById('acceptCustomerSw');
+        const button = document.getElementById('customerSwProceedBtn');
+        button.disabled = !checkbox.checked;
+    }
+    
+    // Proceed to WhatsApp (Customer) - Uses Kenyan number
+    function proceedToWhatsApp() {
+        window.open('https://wa.me/254710440648?text=join%20adjective-weigh', '_blank');
+    }
+    
+    // Proceed to Agent Signup
+    function proceedToAgentSignup() {
+        window.location.href = '/agent-signup';
+    }
+    
+    // Video modal functionality
+    const videoModal = document.getElementById('videoModal');
+    const watchVideoBtn = document.getElementById('watchVideoBtn');
+    const watchVideoBtn2 = document.getElementById('watchVideoBtn2');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+    
+    function openVideoModal() {
+        videoModal.style.display = 'flex';
+    }
+    
+    function closeVideoModal() {
+        videoModal.style.display = 'none';
+    }
+    
+    if (watchVideoBtn) watchVideoBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        openVideoModal();
+    });
+    
+    if (watchVideoBtn2) watchVideoBtn2.addEventListener('click', (e) => {
+        e.preventDefault();
+        openVideoModal();
+    });
+    
+    if (closeModalBtn) closeModalBtn.addEventListener('click', closeVideoModal);
+    
+    window.addEventListener('click', (e) => {
+        if (e.target === videoModal) {
+            closeVideoModal();
+        }
+    });
+    
+    // Chat modal functionality
     const chatBtn = document.getElementById('whatsappChatBtn');
+    const chatModal = document.getElementById('chatModal');
+    const chatCloseBtn = document.getElementById('chatCloseBtn');
+    
     chatBtn.addEventListener('click', (e) => {
         e.preventDefault();
-        window.open('https://wa.me/254710440648?text=Hello%20DukaApp%2C%20I%20need%20help%20with%20your%20service', '_blank');
+        chatModal.style.display = 'flex';
+    });
+    
+    chatCloseBtn.addEventListener('click', () => {
+        chatModal.style.display = 'none';
+    });
+    
+    window.addEventListener('click', (e) => {
+        if (e.target === chatModal) {
+            chatModal.style.display = 'none';
+        }
     });
 </script>
 
